@@ -62,3 +62,17 @@ details.devolver { margin-top:1rem; } details summary { cursor:pointer; color:va
 .resultado-paciente { display:flex; flex-direction:column; gap:.4rem; text-decoration:none; color:inherit; }
 .resultado-paciente .btn { align-self:flex-start; margin-top:.4rem; }
 .ok-txt { color:var(--verde); font-weight:600; } .no-txt { color:var(--rojo); font-weight:600; }
+
+.secciones-panel { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap:1rem; }
+.seccion h2 { margin-top:0; margin-bottom:.2rem; } .seccion .nota { margin-top:0; }
+.filtro-dia { margin-bottom:1rem; align-items:center; } .filtro-dia input { width:auto; }
+.tiempo-promedio { margin:.8rem 0 0; }
+.tabla-scroll { overflow-x:auto; }
+.tabla-docs td { vertical-align:top; }
+.avance { display:flex; gap:3px; margin:.2rem 0; }
+.seg { width:18px; height:8px; border-radius:4px; background:var(--borde); }
+.seg-hecho { background:var(--morado); } .seg-actual { background:var(--morado-claro); border:1px solid var(--morado); }
+.seg-error { background:var(--rojo); }
+.le-toca strong, .le-toca small { display:block; } .completado { color:var(--verde); }
+.btn-secundario { background:#fff; color:var(--morado); border:1px solid var(--morado); }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }

@@ -38,7 +38,7 @@ Cargado → Asociado → Revisado → Autorizado → Notificado → Consultado
 
 | PDF | Escenario | Qué se demuestra |
 |---|---|---|
-| LAB-24001 | Flujo feliz (P1) | Asociar → revisar → autorizar → aviso → la paciente lo consulta |
+| LAB-24001 | Flujo feliz (P1) | Asociar → revisar → autorizar (el aviso sale solo) → la paciente lo consulta. Desde el detalle se puede simular un fallo de aviso y reintentar |
 | LAB-24002 | Homónima | Hay dos "María López Hernández": solo se puede asociar con P2 (fecha y folio coinciden). Resultado LSIL: el médico marca "requiere contacto" |
 | LAB-24003 | Sin acceso digital (P3) | No se puede avisar; se registra entrega asistida |
 | LAB-24004 | Datos que no coinciden | La asociación se bloquea y queda en la bitácora |
@@ -51,6 +51,8 @@ Cargado → Asociado → Revisado → Autorizado → Notificado → Consultado
 - Quien revisó no puede autorizar. Devolver exige motivo.
 - La paciente solo ve sus documentos autorizados; para cualquier otro recibe 404 (no se revela que existe).
 - El aviso no contiene información clínica; el destino se enmascara en la bitácora.
+- Al autorizar, el sistema envía el aviso automáticamente (correo; si falla, el reintento usa SMS). Tras 2 fallos, o si la paciente no tiene acceso digital, queda marcada para entrega asistida.
+- El panel separa **Pendientes** (acumulado: por asociar, revisar, autorizar y devueltos) de **Autorizados** del día elegido (sin abrir, reintentos, entrega asistida, entregados) y muestra el tiempo promedio de entrega (carga → consulta o entrega asistida).
 - Los PDFs se guardan con nombre aleatorio en `almacen_privado/`, que ninguna URL expone; solo la vista `documento` los entrega, tras verificar permisos y la huella SHA-256.
 - Solo se aceptan PDFs (se valida la firma `%PDF-`) de hasta 10 MB.
 - La bitácora es de solo inserción y registra cargas, transiciones, visualizaciones, descargas y accesos denegados.

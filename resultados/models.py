@@ -3,6 +3,8 @@ import uuid
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
+from django.utils.functional import cached_property
 
 
 def ruta_archivo(instancia, nombre):
@@ -48,6 +50,19 @@ class Estado(models.TextChoices):
     DEVUELTO = "devuelto", "Devuelto"
 
 
+def duracion(td):
+    minutos = max(int(td.total_seconds() // 60), 0)
+    dias, minutos = divmod(minutos, 60 * 24)
+    horas, minutos = divmod(minutos, 60)
+    partes = [f"{dias} d"] * bool(dias) + [f"{horas} h"] * bool(horas) + [f"{minutos} min"]
+    return " ".join(partes[:2])
+
+
+PASOS = ["Cargado", "Asociado", "Revisado", "Autorizado", "Notificado", "Entregado"]
+PASOS_POR_ESTADO = {"cargado": 1, "asociado": 2, "revisado": 3, "autorizado": 4, "notificado": 5,
+                    "consultado": 6, "entregado_asistido": 6}
+
+
 class Resultado(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     archivo = models.FileField(upload_to=ruta_archivo)
@@ -63,6 +78,7 @@ class Resultado(models.Model):
     requiere_contacto = models.BooleanField(default=False)
     motivo_devolucion = models.TextField(blank=True)
     entrega_asistida_detalle = models.TextField(blank=True)
+    requiere_entrega_asistida = models.BooleanField(default=False)
 
     cargado_por = models.ForeignKey(Usuario, on_delete=models.PROTECT, related_name="cargas")
     asociado_por = models.ForeignKey(Usuario, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
@@ -71,6 +87,9 @@ class Resultado(models.Model):
 
     creado = models.DateTimeField(auto_now_add=True)
     actualizado = models.DateTimeField(auto_now=True)
+    etapa_desde = models.DateTimeField(default=timezone.now)
+    autorizado_en = models.DateTimeField(null=True, blank=True)
+    entregado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-creado"]
@@ -78,17 +97,71 @@ class Resultado(models.Model):
     def __str__(self):
         return f"{self.folio_laboratorio} · {self.get_estado_display()}"
 
+    @property
+    def completado(self):
+        return self.estado in {Estado.CONSULTADO, Estado.ENTREGADO_ASISTIDO}
+
+    @property
+    def tiempo_en_etapa(self):
+        return duracion(timezone.now() - self.etapa_desde)
+
+    @property
+    def tiempo_entrega(self):
+        return duracion(self.entregado_en - self.creado) if self.entregado_en else ""
+
+    @cached_property
+    def ultimo_aviso(self):
+        return self.notificaciones.order_by("-intento", "-creada").first()
+
+    @cached_property
+    def avance(self):
+        devuelto = self.estado == Estado.DEVUELTO
+        hechos = PASOS_POR_ESTADO.get(self.estado) or 1 + bool(self.asociado_por_id) + bool(self.revisado_por_id)
+        segmentos = []
+        for i, nombre in enumerate(PASOS):
+            if i < hechos:
+                clase = "hecho"
+            elif i == hechos:
+                clase = "error" if devuelto else "actual"
+            else:
+                clase = "pendiente"
+            segmentos.append({"nombre": nombre, "clase": clase})
+        if self.estado == Estado.ENTREGADO_ASISTIDO and self.ultimo_aviso is None:
+            segmentos[4]["clase"] = "omitido"
+        return {"segmentos": segmentos, "hechos": sum(s["clase"] == "hecho" for s in segmentos), "total": len(PASOS)}
+
+    @cached_property
+    def le_toca(self):
+        e = self.estado
+        if self.requiere_entrega_asistida and e in {Estado.AUTORIZADO, Estado.NOTIFICADO}:
+            return ("EIRA", "Entrega asistida")
+        if e == Estado.NOTIFICADO and self.ultimo_aviso and self.ultimo_aviso.estado == Notificacion.Estado.FALLIDA:
+            return ("EIRA", "Reintentar aviso")
+        return {
+            Estado.CARGADO: ("EIRA", "Asociar con expediente"),
+            Estado.ASOCIADO: ("EIRA", "Revisión administrativa"),
+            Estado.REVISADO: ("Médico", "Autorización clínica"),
+            Estado.AUTORIZADO: ("Sistema", "Enviar aviso"),
+            Estado.NOTIFICADO: ("Paciente", "Consultar el documento"),
+            Estado.DEVUELTO: ("Laboratorio", "Corregir y volver a cargar"),
+        }.get(e, ("", "Completado"))
+
 
 class Notificacion(models.Model):
     class Canal(models.TextChoices):
         CORREO = "correo", "Correo"
         SMS = "sms", "SMS"
 
+    class Estado(models.TextChoices):
+        ENVIADA = "enviada", "Enviada (simulada)"
+        FALLIDA = "fallida", "Falló la entrega (simulada)"
+
     resultado = models.ForeignKey(Resultado, on_delete=models.PROTECT, related_name="notificaciones")
     canal = models.CharField(max_length=10, choices=Canal.choices)
     destino = models.CharField(max_length=150)
     mensaje = models.TextField()
-    estado = models.CharField(max_length=20, default="simulada")
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ENVIADA)
+    intento = models.PositiveSmallIntegerField(default=1)
     creada = models.DateTimeField(auto_now_add=True)
 
     class Meta:

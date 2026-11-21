@@ -4,6 +4,7 @@ import unicodedata
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol, Usuario
 
@@ -20,11 +21,13 @@ TRANSICIONES = {
     (Estado.ASOCIADO, Estado.DEVUELTO): {Rol.EIRA},
     (Estado.REVISADO, Estado.AUTORIZADO): {Rol.MEDICO},
     (Estado.REVISADO, Estado.DEVUELTO): {Rol.MEDICO},
-    (Estado.AUTORIZADO, Estado.NOTIFICADO): {Rol.EIRA},
+    (Estado.AUTORIZADO, Estado.NOTIFICADO): set(),  # solo el sistema, al autorizar
     (Estado.AUTORIZADO, Estado.ENTREGADO_ASISTIDO): {Rol.EIRA},
     (Estado.NOTIFICADO, Estado.ENTREGADO_ASISTIDO): {Rol.EIRA},
     (Estado.NOTIFICADO, Estado.CONSULTADO): {Rol.PACIENTE},
 }
+
+MAX_FALLOS_AVISO = 2
 
 ESTADOS_VISIBLES_PACIENTE = {Estado.AUTORIZADO, Estado.NOTIFICADO, Estado.CONSULTADO, Estado.ENTREGADO_ASISTIDO}
 
@@ -42,21 +45,27 @@ def registrar(usuario, accion, resultado=None, anterior="", nuevo="", detalle=""
     )
 
 
-def _transicionar(resultado, usuario, nuevo, accion, detalle=""):
+def _transicionar(resultado, usuario, nuevo, accion, detalle="", sistema=False):
     roles = TRANSICIONES.get((resultado.estado, nuevo))
     if roles is None:
         raise ReglaNegocioError(
             f"No se puede pasar de «{Estado(resultado.estado).label}» a «{Estado(nuevo).label}»."
         )
-    if usuario.rol not in roles:
+    if not sistema and usuario.rol not in roles:
         raise ReglaNegocioError("Tu rol no puede realizar esta acción.")
     anterior = resultado.estado
     # Actualización condicional: si otra petición ya cambió el estado, no se sobrescribe.
     if not Resultado.objects.filter(pk=resultado.pk, estado=anterior).update(estado=nuevo):
         raise ReglaNegocioError("El documento cambió mientras trabajabas en él. Recarga la página.")
+    ahora = timezone.now()
     resultado.estado = nuevo
+    resultado.etapa_desde = ahora
+    if nuevo == Estado.AUTORIZADO:
+        resultado.autorizado_en = ahora
+    if nuevo in {Estado.CONSULTADO, Estado.ENTREGADO_ASISTIDO}:
+        resultado.entregado_en = ahora
     resultado.save()
-    registrar(usuario, accion, resultado, anterior, nuevo, detalle)
+    registrar(None if sistema else usuario, accion, resultado, anterior, nuevo, detalle)
 
 
 def normalizar(texto):
@@ -177,6 +186,7 @@ def autorizar(resultado, usuario, requiere_contacto=False):
     resultado.requiere_contacto = requiere_contacto
     _transicionar(resultado, usuario, Estado.AUTORIZADO, "Autorización clínica",
                   "Requiere contacto con la paciente." if requiere_contacto else "Sin indicaciones adicionales.")
+    return enviar_aviso_automatico(resultado)
 
 
 # ---------- Entrega ----------
@@ -185,22 +195,75 @@ def tiene_acceso_digital(paciente):
     return Usuario.objects.filter(paciente=paciente, is_active=True).exists()
 
 
-@transaction.atomic
-def notificar(resultado, usuario, canal):
-    paciente = resultado.paciente
-    if paciente is None:
-        raise ReglaNegocioError("El documento no está asociado a una paciente.")
-    if not tiene_acceso_digital(paciente):
-        raise ReglaNegocioError("La paciente no tiene acceso al portal: registra una entrega asistida.")
-    destino = paciente.correo if canal == Notificacion.Canal.CORREO else paciente.telefono
-    if not destino:
-        raise ReglaNegocioError(f"La paciente no tiene {Notificacion.Canal(canal).label.lower()} registrado.")
-    Notificacion.objects.create(
-        resultado=resultado, canal=canal, destino=destino,
-        mensaje=MENSAJE_AVISO.format(nombre=paciente.nombre.split()[0]),
+def _canal_disponible(paciente, excluir=None):
+    disponibles = [(c, d) for c, d in [(Notificacion.Canal.CORREO, paciente.correo),
+                                       (Notificacion.Canal.SMS, paciente.telefono)] if d]
+    for canal, destino in disponibles:
+        if canal != excluir:
+            return canal, destino
+    return disponibles[0] if disponibles else (None, None)
+
+
+def _crear_aviso(resultado, canal, destino, intento):
+    return Notificacion.objects.create(
+        resultado=resultado, canal=canal, destino=destino, intento=intento,
+        mensaje=MENSAJE_AVISO.format(nombre=resultado.paciente.nombre.split()[0]),
     )
-    _transicionar(resultado, usuario, Estado.NOTIFICADO,
-                  f"Aviso simulado por {Notificacion.Canal(canal).label.lower()}", f"Destino: {enmascarar(destino)}")
+
+
+def _marcar_entrega_asistida(resultado, motivo):
+    resultado.requiere_entrega_asistida = True
+    resultado.save(update_fields=["requiere_entrega_asistida", "actualizado"])
+    registrar(None, "Requiere entrega asistida", resultado, detalle=motivo)
+
+
+def enviar_aviso_automatico(resultado):
+    paciente = resultado.paciente
+    if not tiene_acceso_digital(paciente):
+        _marcar_entrega_asistida(resultado, "La paciente no tiene acceso al portal.")
+        return None
+    canal, destino = _canal_disponible(paciente)
+    if canal is None:
+        _marcar_entrega_asistida(resultado, "La paciente no tiene correo ni teléfono registrados.")
+        return None
+    aviso = _crear_aviso(resultado, canal, destino, intento=1)
+    _transicionar(resultado, None, Estado.NOTIFICADO,
+                  f"Aviso automático por {Notificacion.Canal(canal).label.lower()}",
+                  f"Destino: {enmascarar(destino)}", sistema=True)
+    return aviso
+
+
+def _aviso_pendiente(resultado, usuario, estado_esperado, error):
+    if usuario.rol != Rol.EIRA:
+        raise ReglaNegocioError("Tu rol no puede realizar esta acción.")
+    aviso = resultado.ultimo_aviso
+    if resultado.estado != Estado.NOTIFICADO or aviso is None or aviso.estado != estado_esperado:
+        raise ReglaNegocioError(error)
+    return aviso
+
+
+@transaction.atomic
+def simular_fallo_aviso(resultado, usuario):
+    aviso = _aviso_pendiente(resultado, usuario, Notificacion.Estado.ENVIADA, "No hay un aviso enviado que pueda fallar.")
+    aviso.estado = Notificacion.Estado.FALLIDA
+    aviso.save(update_fields=["estado"])
+    registrar(usuario, "Fallo de entrega del aviso (simulado)", resultado,
+              detalle=f"Intento {aviso.intento} por {aviso.get_canal_display().lower()}.")
+    fallos = resultado.notificaciones.filter(estado=Notificacion.Estado.FALLIDA).count()
+    if fallos >= MAX_FALLOS_AVISO:
+        _marcar_entrega_asistida(resultado, f"{fallos} intentos de aviso fallidos.")
+
+
+@transaction.atomic
+def reintentar_aviso(resultado, usuario):
+    aviso = _aviso_pendiente(resultado, usuario, Notificacion.Estado.FALLIDA, "Solo se puede reintentar un aviso que falló.")
+    if resultado.requiere_entrega_asistida:
+        raise ReglaNegocioError("Se alcanzó el límite de intentos: registra una entrega asistida.")
+    canal, destino = _canal_disponible(resultado.paciente, excluir=aviso.canal)
+    nuevo = _crear_aviso(resultado, canal, destino, intento=aviso.intento + 1)
+    registrar(usuario, f"Reintento de aviso por {nuevo.get_canal_display().lower()}", resultado,
+              detalle=f"Intento {nuevo.intento}. Destino: {enmascarar(destino)}")
+    return nuevo
 
 
 @transaction.atomic

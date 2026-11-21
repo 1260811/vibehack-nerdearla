@@ -44,7 +44,6 @@ class FlujoTests(TestCase):
     def test_flujo_feliz_hasta_consulta(self):
         r = self.resultado("LAB-24001")
         self.llevar_a_autorizado(r, self.p1)
-        servicios.notificar(r, self.eira, Notificacion.Canal.CORREO)
         self.assertEqual(r.estado, Estado.NOTIFICADO)
         aviso = Notificacion.objects.get(resultado=r)
         self.assertNotIn("NILM", aviso.mensaje)
@@ -62,7 +61,6 @@ class FlujoTests(TestCase):
     def test_consulta_simultanea_no_falla(self):
         r = self.resultado("LAB-24001")
         self.llevar_a_autorizado(r, self.p1)
-        servicios.notificar(r, self.eira, Notificacion.Canal.CORREO)
         paciente = r.paciente.usuario
         copia_vieja = Resultado.objects.get(pk=r.pk)
         servicios.registrar_acceso(paciente, r)
@@ -119,10 +117,41 @@ class FlujoTests(TestCase):
     def test_paciente_sin_acceso_digital_requiere_entrega_asistida(self):
         r = self.resultado("LAB-24003")
         self.llevar_a_autorizado(r, self.p3)
-        with self.assertRaises(servicios.ReglaNegocioError):
-            servicios.notificar(r, self.eira, Notificacion.Canal.SMS)
+        self.assertEqual(r.estado, Estado.AUTORIZADO)
+        self.assertTrue(r.requiere_entrega_asistida)
+        self.assertFalse(Notificacion.objects.filter(resultado=r).exists())
         servicios.registrar_entrega_asistida(r, self.eira, "La paciente en recepción", "INE")
         self.assertEqual(r.estado, Estado.ENTREGADO_ASISTIDO)
+
+    def test_reintentos_de_aviso_hasta_entrega_asistida(self):
+        r = self.resultado("LAB-24001")
+        self.llevar_a_autorizado(r, self.p1)
+        with self.assertRaises(servicios.ReglaNegocioError):
+            servicios.reintentar_aviso(r, self.eira)
+        servicios.simular_fallo_aviso(r, self.eira)
+        reintento = servicios.reintentar_aviso(r, self.eira)
+        self.assertEqual((reintento.intento, reintento.canal), (2, Notificacion.Canal.SMS))
+        r = self.resultado("LAB-24001")
+        servicios.simular_fallo_aviso(r, self.eira)
+        r.refresh_from_db()
+        self.assertTrue(r.requiere_entrega_asistida)
+        with self.assertRaises(servicios.ReglaNegocioError):
+            servicios.reintentar_aviso(self.resultado("LAB-24001"), self.eira)
+        self.assertEqual(r.le_toca, ("EIRA", "Entrega asistida"))
+
+    def test_panel_por_secciones_y_dia(self):
+        r = self.resultado("LAB-24001")
+        self.llevar_a_autorizado(r, self.p1)
+        servicios.registrar_acceso(r.paciente.usuario, r)
+        self.client.login(username="admin@eira.test", password="Demo2026!")
+        respuesta = self.client.get(reverse("panel"), {"ver": "entregados"})
+        self.assertContains(respuesta, "Pendientes")
+        self.assertContains(respuesta, "LAB-24001")
+        self.assertNotContains(respuesta, "LAB-24002")
+        self.assertIsNotNone(respuesta.context["promedio"])
+        otro_dia = self.client.get(reverse("panel"), {"dia": "2020-01-01", "ver": "entregados"})
+        self.assertNotContains(otro_dia, "LAB-24001")
+        self.assertEqual(otro_dia.context["total_autorizados"], 0)
 
     def test_paciente_no_ve_documento_ajeno_ni_no_autorizado(self):
         r1, r2 = self.resultado("LAB-24001"), self.resultado("LAB-24002")

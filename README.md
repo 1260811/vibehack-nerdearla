@@ -32,6 +32,12 @@ En la demo, el enlace y el código aparecen en **Avisos simulados** (botón «Ab
 
 Sin `--con-resultados`, el laboratorio sube los PDFs a mano desde `datos_demo/pdfs/` (los datos de cada hoja están en `datos_demo/resultados.json`).
 
+## Lectura automática de la hoja (carga manual)
+
+Al elegir el PDF en «Cargar resultado escaneado», el sistema lee la primera página y llena nombre, fecha de nacimiento, folio de expediente y folio de laboratorio. Si el PDF trae texto lo usa directamente; si es un escaneo, aplica OCR local con Tesseract, sin enviar el documento a servicios externos. Los campos con lectura dudosa (confianza menor a 85 % o formato inválido) quedan marcados para revisión. El extractor solo **propone**: la persona confirma con «Cargar PDF» y EIRA vuelve a comparar los datos con el expediente al asociar.
+
+Requisito del servidor: `sudo apt-get install tesseract-ocr tesseract-ocr-spa`. Sin Tesseract, la carga funciona igual y los datos se capturan a mano.
+
 ## Bandeja de entrada (el laboratorio solo deja archivos)
 
 El laboratorio no tiene que capturar ni avisar: deja cada PDF con un `.json` del mismo nombre en una carpeta compartida y el sistema lo carga con las mismas validaciones que la carga manual.

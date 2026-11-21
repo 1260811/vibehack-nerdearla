@@ -1,0 +1,6 @@
+<p class="campo">
+  <label for="{{ campo.id_for_label }}">{{ campo.label }}:</label>
+  {{ campo }}
+  <span class="revisar" id="revisar-{{ campo.name }}" hidden></span>
+  {% for e in campo.errors %}<span class="error-campo">{{ e }}</span>{% endfor %}
+</p>

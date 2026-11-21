@@ -216,7 +216,10 @@ def importar_bandeja(usuario, carpeta=None):
             motivo = str(e) if isinstance(e, ReglaNegocioError) else f"Error inesperado al cargar ({type(e).__name__})."
             enviados = [pdf] + ([datos_json] if datos_json.exists() or datos_json.is_symlink() else [])
             archivado = _archivar(carpeta / "rechazados", *enviados)[0]
-            (carpeta / "rechazados" / f"{archivado.stem}.motivo.txt").write_text(motivo + "\n", encoding="utf-8")
+            try:
+                (carpeta / "rechazados" / f"{archivado.stem}.motivo.txt").write_text(motivo + "\n", encoding="utf-8")
+            except OSError:
+                logger.exception("No se pudo escribir el motivo de rechazo de %s", pdf.name)
             registrar(usuario, "Importación rechazada", detalle=f"{pdf.name}: {motivo}")
             rechazados.append((pdf.name, motivo))
         else:

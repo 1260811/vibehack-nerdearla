@@ -183,9 +183,9 @@ def importar_bandeja(usuario, carpeta=None):
                 raise ReglaNegocioError(f"{datos_json.name} es demasiado grande para ser una hoja de datos.")
             try:
                 hoja = json.loads(datos_json.read_text(encoding="utf-8"))
-                faltan = [c for c in CAMPOS_HOJA if not str(hoja.get(c, "")).strip()]
+                faltan = [c for c in CAMPOS_HOJA if not isinstance(hoja.get(c), str) or not hoja[c].strip()]
                 fecha = date.fromisoformat(hoja.get("fecha_nacimiento", ""))
-            except (ValueError, AttributeError):
+            except (ValueError, AttributeError, TypeError):
                 raise ReglaNegocioError(f"{datos_json.name} no es válido (JSON con fecha AAAA-MM-DD).")
             if faltan:
                 raise ReglaNegocioError(f"En {datos_json.name} faltan: {', '.join(faltan)}.")
@@ -206,6 +206,12 @@ def importar_bandeja(usuario, carpeta=None):
             archivado = _archivar(carpeta / "rechazados", *enviados)[0]
             (carpeta / "rechazados" / f"{archivado.stem}.motivo.txt").write_text(motivo + "\n", encoding="utf-8")
             rechazados.append((pdf.name, motivo))
+        except Exception:
+            # Error inesperado: el envío vuelve a la bandeja para no perderlo.
+            for ruta in (pdf, datos_json):
+                if ruta.exists() or ruta.is_symlink():
+                    os.rename(ruta, carpeta / ruta.name)
+            raise
         else:
             _archivar(carpeta / "procesados", pdf, datos_json)
             cargados.append(resultado)

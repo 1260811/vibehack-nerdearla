@@ -269,6 +269,17 @@ class BandejaYPanelTests(TestCase):
         self.assertEqual(len(list(rechazados.glob("falso*.pdf"))), 2)
         self.assertEqual(len(list(rechazados.glob("falso*.motivo.txt"))), 2)
 
+    def test_bandeja_rechaza_campos_que_no_son_texto(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        datos = self.carpeta / "R1_LAB-24001.json"
+        hoja = json.loads(datos.read_text())
+        datos.write_text(json.dumps({**hoja, "fecha_nacimiento": None}))
+        (self.carpeta / "R2_LAB-24002.json").write_text(json.dumps({**hoja, "nombre": 7, "folio_laboratorio": "LAB-7"}))
+        cargados, rechazados = servicios.importar_bandeja(self.lab)
+        self.assertEqual(len(cargados), 3)
+        self.assertEqual(sorted(dict(rechazados)), ["R1_LAB-24001.pdf", "R2_LAB-24002.pdf"])
+        self.assertEqual(list(self.carpeta.glob(".importando-*")), [])
+
     def test_avance_y_panel_por_etapa(self):
         call_command("cargar_demo", "--a-bandeja", verbosity=0)
         servicios.importar_bandeja(self.lab)

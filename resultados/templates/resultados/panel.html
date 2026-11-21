@@ -13,14 +13,14 @@
     <h2 id="t-pendientes">Pendientes</h2>
     <p class="nota">Necesitan a una persona. Acumulado de todos los días.</p>
     <div class="tarjetas-estado">
-      {% for k in pendientes %}<a class="kpi {% if ver == k.clave %}activo{% endif %}" href="?dia={{ dia|date:'Y-m-d' }}&ver={{ k.clave }}"><strong>{{ k.n }}</strong>{{ k.etiqueta }}</a>{% endfor %}
+      {% for k in pendientes %}<a class="kpi{% if ver == k.clave %} activo{% endif %}"{% if ver == k.clave %} aria-current="true"{% endif %} href="?dia={{ dia|date:'Y-m-d' }}&ver={{ k.clave }}"><strong>{{ k.n }}</strong>{{ k.etiqueta }}</a>{% endfor %}
     </div>
   </section>
   <section class="tarjeta seccion" aria-labelledby="t-autorizados">
     <h2 id="t-autorizados">Autorizados {% if es_hoy %}hoy{% else %}el {{ dia|date:"d/m/Y" }}{% endif %}: {{ total_autorizados }}</h2>
     <p class="nota">El aviso se envía automáticamente al autorizar.</p>
     <div class="tarjetas-estado">
-      {% for k in autorizados %}<a class="kpi {% if ver == k.clave %}activo{% endif %}" href="?dia={{ dia|date:'Y-m-d' }}&ver={{ k.clave }}"><strong>{{ k.n }}</strong>{{ k.etiqueta }}</a>{% endfor %}
+      {% for k in autorizados %}<a class="kpi{% if ver == k.clave %} activo{% endif %}"{% if ver == k.clave %} aria-current="true"{% endif %} href="?dia={{ dia|date:'Y-m-d' }}&ver={{ k.clave }}"><strong>{{ k.n }}</strong>{{ k.etiqueta }}</a>{% endfor %}
     </div>
     <p class="tiempo-promedio">Tiempo promedio de entrega:
       {% if promedio %}<strong>{{ promedio }}</strong> <span class="nota">(de la carga a la consulta o entrega asistida; {{ n_entregados_dia }} entrega{{ n_entregados_dia|pluralize }} ese día)</span>

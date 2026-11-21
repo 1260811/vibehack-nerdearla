@@ -18,13 +18,13 @@
       <span>{{ en_bandeja|length }} PDF(s) esperando</span>
     </form>
     <h2>Mis cargas</h2>
-    <table>
-      <tr><th>Folio lab.</th><th>Nombre en hoja</th><th>Estado</th><th>Observaciones</th></tr>
+    <div class="tabla-scroll" role="region" aria-label="Mis cargas" tabindex="0"><table>
+      <tr><th scope="col">Folio lab.</th><th scope="col">Nombre en hoja</th><th scope="col">Estado</th><th scope="col">Observaciones</th></tr>
       {% for r in cargas %}
       <tr><td>{{ r.folio_laboratorio }}</td><td>{{ r.hoja_nombre }}</td><td>{% include "resultados/_estado.html" %}</td>
           <td>{{ r.motivo_devolucion }}</td></tr>
       {% empty %}<tr><td colspan="4" class="vacio">Sin cargas todavía.</td></tr>{% endfor %}
-    </table>
+    </table></div>
   </section>
 </div>
 {% endblock %}

@@ -3,8 +3,8 @@
 <h1>Bitácora de acciones</h1>
 <p class="nota">Registro de solo inserción: nada se edita ni se borra.</p>
 <section class="tarjeta">
-<table>
-  <tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Documento</th><th>Estado</th><th>Detalle</th></tr>
+<div class="tabla-scroll" role="region" aria-label="Eventos de la bitácora" tabindex="0"><table>
+  <tr><th scope="col">Fecha</th><th scope="col">Usuario</th><th scope="col">Acción</th><th scope="col">Documento</th><th scope="col">Estado</th><th scope="col">Detalle</th></tr>
   {% for e in eventos %}
   <tr><td>{{ e.fecha|date:"d/m H:i:s" }}</td><td>{{ e.usuario.first_name|default:"sistema" }}<br><span class="nota">{{ e.usuario.get_rol_display }}</span></td>
       <td>{{ e.accion }}</td>
@@ -12,6 +12,6 @@
       <td>{% if e.estado_nuevo %}{{ e.etiqueta_anterior }} → {{ e.etiqueta_nueva }}{% endif %}</td>
       <td class="nota">{{ e.detalle }}</td></tr>
   {% empty %}<tr><td colspan="6" class="vacio">Sin eventos.</td></tr>{% endfor %}
-</table>
+</table></div>
 </section>
 {% endblock %}

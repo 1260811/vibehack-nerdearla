@@ -1,7 +1,7 @@
 {% extends "resultados/base.html" %}
 {% block contenido %}
 <h1>Pendientes de autorización clínica</h1>
-<section class="tarjeta">{% include "resultados/_tabla.html" with lista=pendientes %}</section>
+<section class="tarjeta">{% include "resultados/_tabla.html" with lista=pendientes etiqueta="Por autorizar" %}</section>
 <h2>Autorizados por mí</h2>
-<section class="tarjeta">{% include "resultados/_tabla.html" with lista=autorizados %}</section>
+<section class="tarjeta">{% include "resultados/_tabla.html" with lista=autorizados etiqueta="Autorizados" %}</section>
 {% endblock %}

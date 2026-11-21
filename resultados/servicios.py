@@ -118,6 +118,7 @@ def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_
 # ---------- Bandeja de entrada (el laboratorio solo deja archivos en una carpeta) ----------
 
 CAMPOS_HOJA = ("nombre", "fecha_nacimiento", "folio_expediente", "folio_laboratorio")
+TAMANO_MAXIMO_JSON = 64 * 1024
 
 
 def pendientes_en_bandeja(carpeta=None):
@@ -141,8 +142,12 @@ def importar_bandeja(usuario, carpeta=None):
     for pdf in pendientes_en_bandeja(carpeta):
         datos_json = pdf.with_suffix(".json")
         try:
+            if pdf.is_symlink() or datos_json.is_symlink():
+                raise ReglaNegocioError("No se aceptan enlaces simbólicos; deja el archivo real en la bandeja.")
             if not datos_json.exists():
                 raise ReglaNegocioError(f"Falta {datos_json.name} con los datos de la hoja.")
+            if datos_json.stat().st_size > TAMANO_MAXIMO_JSON:
+                raise ReglaNegocioError(f"{datos_json.name} es demasiado grande para ser una hoja de datos.")
             try:
                 hoja = json.loads(datos_json.read_text(encoding="utf-8"))
                 faltan = [c for c in CAMPOS_HOJA if not str(hoja.get(c, "")).strip()]

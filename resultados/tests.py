@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -231,6 +232,19 @@ class BandejaYPanelTests(TestCase):
         self.assertContains(respuesta, "5 documento(s) importado(s)")
         self.client.login(username="medico@eira.test", password="Demo2026!")
         self.assertEqual(self.client.post(reverse("importar_bandeja")).status_code, 403)
+
+    def test_bandeja_rechaza_enlaces_simbolicos_y_json_enorme(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        externo = self.carpeta.parent / f"{self.carpeta.name}-externo.pdf"
+        shutil.move(self.carpeta / "R1_LAB-24001.pdf", externo)
+        self.addCleanup(externo.unlink)
+        os.symlink(externo, self.carpeta / "R1_LAB-24001.pdf")
+        (self.carpeta / "R2_LAB-24002.json").write_text(" " * (servicios.TAMANO_MAXIMO_JSON + 1))
+        cargados, rechazados = servicios.importar_bandeja(self.lab)
+        motivos = dict(rechazados)
+        self.assertEqual(len(cargados), 3)
+        self.assertIn("enlaces simbólicos", motivos["R1_LAB-24001.pdf"])
+        self.assertIn("demasiado grande", motivos["R2_LAB-24002.pdf"])
 
     def test_avance_y_panel_por_etapa(self):
         call_command("cargar_demo", "--a-bandeja", verbosity=0)

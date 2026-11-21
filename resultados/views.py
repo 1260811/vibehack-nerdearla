@@ -67,7 +67,8 @@ def panel(request):
         estado__in=[Estado.ENTREGADO_ASISTIDO, Estado.DEVUELTO]
     ).select_related("paciente")
     return render(request, "resultados/panel.html", {
-        "tarjetas": tarjetas, "resultados": resultados, "filtro": filtro, "contacto": contacto,
+        "tarjetas": tarjetas, "total": sum(conteos.values()), "resultados": resultados,
+        "filtro": filtro, "contacto": contacto,
     })
 
 

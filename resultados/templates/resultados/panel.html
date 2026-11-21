@@ -2,7 +2,7 @@
 {% block contenido %}
 <h1>Panel de seguimiento</h1>
 <div class="tarjetas-estado">
-  <a class="kpi {% if not filtro %}activo{% endif %}" href="{% url 'panel' %}"><strong>{{ resultados|length }}</strong>{% if filtro %}Ver todos{% else %}Todos{% endif %}</a>
+  <a class="kpi {% if not filtro %}activo{% endif %}" href="{% url 'panel' %}"><strong>{{ total }}</strong>{% if filtro %}Ver todos{% else %}Todos{% endif %}</a>
   {% for t in tarjetas %}
   <a class="kpi kpi-{{ t.estado.value }} {% if filtro == t.estado.value %}activo{% endif %}" href="?estado={{ t.estado.value }}"><strong>{{ t.n }}</strong>{{ t.estado.label }}</a>
   {% endfor %}

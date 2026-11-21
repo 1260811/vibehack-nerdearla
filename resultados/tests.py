@@ -251,6 +251,9 @@ class BandejaYPanelTests(TestCase):
         call_command("cargar_demo", "--a-bandeja", verbosity=0)
         with override_settings(SEGUNDOS_ESPERA_BANDEJA=60):
             self.assertEqual(servicios.importar_bandeja(self.lab), ([], []))
+            self.client.login(username="laboratorio@lab.test", password="Demo2026!")
+            respuesta = self.client.post(reverse("importar_bandeja"), follow=True)
+            self.assertContains(respuesta, "pueden seguir copiándose")
         self.assertEqual(len(servicios.pendientes_en_bandeja()), 5)
 
     def test_importaciones_simultaneas_no_toman_el_mismo_pdf(self):

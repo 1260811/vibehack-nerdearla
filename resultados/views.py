@@ -63,7 +63,11 @@ def laboratorio(request):
 def importar_bandeja(request):
     cargados, rechazados = servicios.importar_bandeja(request.user)
     if not cargados and not rechazados:
-        messages.warning(request, "La bandeja de entrada está vacía.")
+        en_espera = len(servicios.pendientes_en_bandeja())
+        messages.warning(request, (
+            f"{en_espera} PDF(s) llegaron hace menos de {settings.SEGUNDOS_ESPERA_BANDEJA} s y pueden seguir "
+            "copiándose; vuelve a importar en unos segundos."
+        ) if en_espera else "La bandeja de entrada está vacía.")
     if cargados:
         messages.success(request, f"{len(cargados)} documento(s) importado(s) desde la bandeja: "
                                   + ", ".join(r.folio_laboratorio for r in cargados) + ".")

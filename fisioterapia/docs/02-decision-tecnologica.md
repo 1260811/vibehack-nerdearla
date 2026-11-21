@@ -1,4 +1,6 @@
-# 01 · FASE 1 — Decisión tecnológica (plantilla)
+# 02 · FASE 1 — Decisión tecnológica (plantilla)
+
+> **Resumen:** Compara Firestore, Cloud SQL y PostgreSQL autoadministrado por criterios técnicos y costo en tres escenarios, y termina en una recomendación justificada.
 
 > Regla: **no generar SQL** hasta cerrar esta fase. Los costos se toman de las páginas oficiales de precios de Google Cloud, con fecha de consulta.
 

@@ -1,4 +1,6 @@
-# 05 · Convenciones de base de datos (PostgreSQL)
+# 06 · Convenciones de base de datos (PostgreSQL)
+
+> **Resumen:** Reglas de nombrado, columnas comunes y cuándo usar catálogo, ENUM o CHECK, para que el esquema sea consistente.
 
 Aplican solo si la Fase 1 confirma PostgreSQL.
 

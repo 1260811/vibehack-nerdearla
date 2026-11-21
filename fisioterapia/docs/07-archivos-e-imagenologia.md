@@ -1,4 +1,6 @@
-# 06 · Archivos e imagenología
+# 07 · Archivos e imagenología
+
+> **Resumen:** Los archivos viven en un bucket privado; la base guarda solo la referencia y el backend entrega URLs firmadas temporales a usuarios autorizados.
 
 ## Reglas
 

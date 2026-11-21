@@ -1,4 +1,6 @@
-# 03 · FASE 2 — Modelo de dominio (esquema general)
+# 04 · FASE 2 — Modelo de dominio (esquema general)
+
+> **Resumen:** Entidades por módulo y sus relaciones. Regla central: paciente → sesiones → padecimientos atendidos → intervenciones realizadas, separando lo recomendado de lo ejecutado.
 
 > Esquema conceptual. Los nombres de tablas son tentativos y se confirman al cerrar esta fase.
 

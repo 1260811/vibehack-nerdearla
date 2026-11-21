@@ -1,4 +1,6 @@
-# 02 · Arquitectura candidata
+# 03 · Arquitectura candidata
+
+> **Resumen:** Web + FastAPI + PostgreSQL + Cloud Storage privado: pocas piezas, pago por uso y seguridad en el backend. Incluye el recorrido de una solicitud.
 
 > Punto de partida a evaluar en la Fase 1, no una decisión cerrada.
 

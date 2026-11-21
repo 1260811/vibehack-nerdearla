@@ -1,4 +1,6 @@
-# 07 · Buenas prácticas del proyecto
+# 08 · Buenas prácticas del proyecto
+
+> **Resumen:** Lineamientos de proceso, diseño, seguridad, repositorio y operación que aplican en todas las fases.
 
 ## Proceso
 

@@ -1,4 +1,6 @@
-# 04 · Seguridad, auditoría y conservación
+# 05 · Seguridad, auditoría y conservación
+
+> **Resumen:** Quién puede hacer qué, cómo se registra cada acceso y cambio, cómo no perder registros clínicos y qué debe validar un especialista legal.
 
 ## Principios
 

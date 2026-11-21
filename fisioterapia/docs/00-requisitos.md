@@ -1,5 +1,7 @@
 # 00 · Requisitos y alcance
 
+> **Resumen:** Qué necesita la clínica en la V1, qué queda para después, qué estamos suponiendo y qué falta preguntar.
+
 ## Contexto
 
 | Aspecto | Valor |

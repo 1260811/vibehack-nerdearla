@@ -94,3 +94,24 @@ Cargado → Asociado → Revisado → Autorizado → Notificado → Consultado
 ```bash
 python manage.py test resultados
 ```
+
+### Tester del flujo real y brechas conocidas
+
+```bash
+python3 manage.py test resultados
+python3 manage.py probar_flujo
+```
+
+El segundo comando ejecuta `resultados/tests_flujo.py` con base de datos aislada y
+regenera [casos de borde](docs/casos_borde.md). No modifica los expedientes de la demo.
+Los fallos esperados (`expectedFailure`) documentan brechas **sin corregir la aplicación**:
+una suite verde no significa que estos controles ya existan. Un éxito inesperado exige
+revisar el contrato y retirar la marca si la brecha se resolvió.
+
+- [Flujo Mermaid y matriz de permisos reales](docs/diagrama_flujo.md).
+- [Diagrama renderizado PNG](docs/diagrama_flujo.png).
+- Fuente alternativa reproducible: `dot -Tpng docs/diagrama_flujo.dot -o docs/diagrama_flujo.png` (Graphviz, solo documentación).
+
+No se añadieron dependencias Python: se utiliza el Django existente y la biblioteca estándar.
+Los avisos, asignaciones médicas, representación legal, correcciones versionadas y respaldo
+de canales deben revisarse contra el informe antes de considerar un uso real con datos clínicos.

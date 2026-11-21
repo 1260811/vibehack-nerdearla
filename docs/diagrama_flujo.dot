@@ -1,0 +1,41 @@
+digraph flujo {
+  graph [rankdir=TB, bgcolor="#f4f7fb", fontname="DejaVu Sans", label="EIRA · Flujo real y controles pendientes", labelloc=t, fontsize=24, pad="0.3", nodesep="0.35"];
+  node [shape=box, style="rounded,filled", fillcolor=white, fontname="DejaVu Sans", fontsize=12, margin="0.16,0.12"];
+  edge [fontname="DejaVu Sans", fontsize=10, color="#34465c"];
+  subgraph cluster_lab { label="Laboratorio"; color="#3998ad"; carga [label="Subir PDF y datos"]; bandeja [label="Depositar PDF + JSON"]; devuelto [label="devuelto\nCorregir y cargar de nuevo"]; }
+  subgraph cluster_sistema { label="Sistema · servicios internos (sin rol de usuario)"; color="#7c88a0"; json [shape=diamond,label="¿JSON y folio\nválidos?"]; validacion [shape=diamond,label="¿Firma PDF\ny tamaño?"]; rechazo [label="Rechazo de importación\nArchivar y auditar"]; cargado [label="cargado"]; identidad [shape=diamond,label="¿Nombre + fecha\n+ folio coinciden?"]; bloqueo [label="Bloquear asociación\ny auditar"]; acceso [shape=diamond,label="¿Sesión, permiso\ne integridad?"]; denegado [label="404 / 409 y evento"]; }
+  subgraph cluster_eira { label="EIRA · captura y revisión comparten rol"; color="#5d9b6a"; asociado [label="asociado"]; revision [shape=diamond,label="¿Legible y\nuna paciente?\nRevisión humana"]; revisado [label="revisado"]; canal [shape=diamond,label="¿Cuenta activa\ny contacto?"]; notificado [label="notificado\nCorreo o SMS simulado"]; asistida [label="entregado_asistido\nReceptor e identidad"]; }
+  subgraph cluster_medico { label="Médico · sin asignación individual"; color="#ba8a43"; decision [shape=diamond,label="¿Autoriza?\nDistinto del revisor"]; autorizado [label="autorizado\nYa visible para paciente"]; }
+  subgraph cluster_paciente { label="Paciente"; color="#8e70bc"; consulta [label="Iniciar sesión\nVer/descargar resultado propio"]; consultado [label="consultado\nSolo desde notificado"]; }
+  subgraph cluster_pendiente { label="PENDIENTE · no implementado"; color="#c44e52"; pendientes [label="Tutor legal · Asignación médica\nVersiones y revocación\nTokens caducables de uso único",fillcolor="#ffe9e9"]; respaldo [label="Falla real correo → SMS → asistencia\nSin proveedor ni respaldo automático",fillcolor="#ffe9e9"]; }
+  carga -> validacion;
+  bandeja -> json;
+  json -> validacion [label="Sí"];
+  json -> rechazo [label="No"];
+  validacion -> rechazo [label="No"];
+  validacion -> cargado [label="Sí"];
+  cargado -> identidad;
+  identidad -> bloqueo [label="No / homónimo"];
+  bloqueo -> identidad [label="Verificar"];
+  bloqueo -> devuelto [label="Con motivo"];
+  identidad -> asociado [label="Sí"];
+  asociado -> revision;
+  revision -> devuelto [label="No"];
+  revision -> revisado [label="Sí"];
+  revisado -> decision;
+  decision -> devuelto [label="Devolver con motivo"];
+  decision -> autorizado [label="Autorizar"];
+  devuelto -> carga [label="Nueva carga independiente",constraint=false];
+  autorizado -> canal;
+  canal -> notificado [label="Sí: elección manual"];
+  canal -> asistida [label="No: gestionar asistencia"];
+  notificado -> asistida [label="Alternativa manual"];
+  notificado -> consulta;
+  autorizado -> consulta [label="Acceso sin aviso"];
+  consulta -> acceso;
+  acceso -> denegado [label="No"];
+  acceso -> consultado [label="Sí: desde notificado"];
+  acceso -> autorizado [label="Desde autorizado:\nsin cambio",constraint=false];
+  autorizado -> pendientes [style=dashed,color="#c44e52"];
+  notificado -> respaldo [style=dashed,color="#c44e52"];
+}

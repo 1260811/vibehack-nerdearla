@@ -1,7 +1,9 @@
 """Reglas de negocio: máquina de estados, verificación de identidad y bitácora."""
 import hashlib
 import json
+import os
 import shutil
+import tempfile
 import time
 import unicodedata
 from datetime import date, timedelta
@@ -132,6 +134,15 @@ def _mover(ruta, destino):
     shutil.move(str(ruta), str(destino / ruta.name))
 
 
+def _reclamar(ruta, trabajo):
+    """Mueve el archivo a la carpeta privada de esta importación; None si otra ya lo tomó."""
+    try:
+        os.rename(ruta, trabajo / ruta.name)
+    except FileNotFoundError:
+        return None
+    return trabajo / ruta.name
+
+
 def _reciente(ruta, ahora):
     try:
         return ahora - ruta.lstat().st_mtime < settings.SEGUNDOS_ESPERA_BANDEJA
@@ -148,10 +159,16 @@ def importar_bandeja(usuario, carpeta=None):
     carpeta = Path(carpeta or settings.CARPETA_ENTRADA)
     cargados, rechazados = [], []
     ahora = time.time()
+    trabajo = None
     for pdf in pendientes_en_bandeja(carpeta):
         datos_json = pdf.with_suffix(".json")
         if _reciente(pdf, ahora) or _reciente(datos_json, ahora):
             continue
+        trabajo = trabajo or Path(tempfile.mkdtemp(prefix=".importando-", dir=carpeta))
+        pdf = _reclamar(pdf, trabajo)
+        if pdf is None:
+            continue
+        datos_json = _reclamar(datos_json, trabajo) or trabajo / datos_json.name
         try:
             if pdf.is_symlink() or datos_json.is_symlink():
                 raise ReglaNegocioError("No se aceptan enlaces simbólicos; deja el archivo real en la bandeja.")
@@ -189,6 +206,8 @@ def importar_bandeja(usuario, carpeta=None):
             _mover(pdf, carpeta / "procesados")
             _mover(datos_json, carpeta / "procesados")
             cargados.append(resultado)
+    if trabajo:
+        trabajo.rmdir()
     return cargados, rechazados
 
 

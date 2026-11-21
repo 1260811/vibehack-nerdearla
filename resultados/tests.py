@@ -252,6 +252,15 @@ class BandejaYPanelTests(TestCase):
             self.assertEqual(servicios.importar_bandeja(self.lab), ([], []))
         self.assertEqual(len(servicios.pendientes_en_bandeja()), 5)
 
+    def test_importaciones_simultaneas_no_toman_el_mismo_pdf(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        pdf = self.carpeta / "R1_LAB-24001.pdf"
+        otra = Path(tempfile.mkdtemp(dir=self.carpeta))
+        self.assertEqual(servicios._reclamar(pdf, otra), otra / pdf.name)
+        cargados, _ = servicios.importar_bandeja(self.lab)
+        self.assertNotIn("LAB-24001", [r.folio_laboratorio for r in cargados])
+        self.assertEqual(sorted(p.name for p in self.carpeta.glob(".importando-*")), [])
+
     def test_avance_y_panel_por_etapa(self):
         call_command("cargar_demo", "--a-bandeja", verbosity=0)
         servicios.importar_bandeja(self.lab)

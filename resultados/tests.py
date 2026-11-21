@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -279,6 +280,21 @@ class BandejaYPanelTests(TestCase):
         self.assertEqual(len(cargados), 3)
         self.assertEqual(sorted(dict(rechazados)), ["R1_LAB-24001.pdf", "R2_LAB-24002.pdf"])
         self.assertEqual(list(self.carpeta.glob(".importando-*")), [])
+
+    def test_error_inesperado_rechaza_el_envio_y_sigue(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        original = servicios.cargar_resultado
+
+        def falla_con_r1(usuario, archivo, **datos):
+            if datos["folio_laboratorio"] == "LAB-24001":
+                raise OSError("disco lleno")
+            return original(usuario, archivo, **datos)
+
+        with mock.patch.object(servicios, "cargar_resultado", falla_con_r1), self.assertLogs("resultados.servicios"):
+            cargados, rechazados = servicios.importar_bandeja(self.lab)
+        self.assertEqual(len(cargados), 4)
+        self.assertIn("Error inesperado", dict(rechazados)["R1_LAB-24001.pdf"])
+        self.assertTrue((self.carpeta / "rechazados" / "R1_LAB-24001.json").exists())
 
     def test_avance_y_panel_por_etapa(self):
         call_command("cargar_demo", "--a-bandeja", verbosity=0)

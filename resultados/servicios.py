@@ -1,6 +1,7 @@
 """Reglas de negocio: máquina de estados, verificación de identidad y bitácora."""
 import hashlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -16,6 +17,8 @@ from django.db.models import Count
 from django.utils import timezone
 
 from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol, Usuario
+
+logger = logging.getLogger(__name__)
 
 
 class ReglaNegocioError(Exception):
@@ -199,19 +202,16 @@ def importar_bandeja(usuario, carpeta=None):
                     hoja_folio_expediente=hoja["folio_expediente"], folio_laboratorio=folio,
                     origen=f"Bandeja de entrada ({pdf.name})",
                 )
-        except ReglaNegocioError as e:
-            motivo = str(e)
+        except Exception as e:
+            # Un error inesperado también rechaza el envío, para que no bloquee a los siguientes.
+            if not isinstance(e, ReglaNegocioError):
+                logger.exception("Error inesperado al importar %s", pdf.name)
+            motivo = str(e) if isinstance(e, ReglaNegocioError) else f"Error inesperado al cargar ({type(e).__name__})."
             registrar(usuario, "Importación rechazada", detalle=f"{pdf.name}: {motivo}")
             enviados = [pdf] + ([datos_json] if datos_json.exists() or datos_json.is_symlink() else [])
             archivado = _archivar(carpeta / "rechazados", *enviados)[0]
             (carpeta / "rechazados" / f"{archivado.stem}.motivo.txt").write_text(motivo + "\n", encoding="utf-8")
             rechazados.append((pdf.name, motivo))
-        except Exception:
-            # Error inesperado: el envío vuelve a la bandeja para no perderlo.
-            for ruta in (pdf, datos_json):
-                if ruta.exists() or ruta.is_symlink():
-                    os.rename(ruta, carpeta / ruta.name)
-            raise
         else:
             _archivar(carpeta / "procesados", pdf, datos_json)
             cargados.append(resultado)

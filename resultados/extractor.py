@@ -97,9 +97,9 @@ def extraer_datos(archivo):
     try:
         with pymupdf.open(stream=archivo.read(), filetype="pdf") as doc:
             pagina = doc[0]
-            texto = pagina.get_text()
-            if len(texto.strip()) > 40:
-                return interpretar(_lineas_texto(texto))
+            campos = interpretar(_lineas_texto(pagina.get_text()))
+            if any(c["valor"] for c in campos.values()):
+                return campos
             if not ocr_disponible():
                 raise ExtraccionError("La lectura automática no está instalada en este servidor.")
             png = pagina.get_pixmap(dpi=300, colorspace=pymupdf.csGRAY).tobytes("png")

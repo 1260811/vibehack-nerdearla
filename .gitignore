@@ -5,3 +5,4 @@ venv/
 db.sqlite3
 almacen_privado/
 .env
+bandeja_entrada/

@@ -8,6 +8,7 @@ urlpatterns = [
     path("entrar/", auth_views.LoginView.as_view(template_name="resultados/login.html"), name="login"),
     path("salir/", auth_views.LogoutView.as_view(), name="logout"),
     path("laboratorio/", views.laboratorio, name="laboratorio"),
+    path("laboratorio/importar-bandeja/", views.importar_bandeja, name="importar_bandeja"),
     path("panel/", views.panel, name="panel"),
     path("medico/", views.medico, name="medico"),
     path("resultados/<uuid:pk>/", views.detalle, name="detalle"),

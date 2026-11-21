@@ -1,12 +1,23 @@
 """Reglas de negocio: máquina de estados, verificación de identidad y bitácora."""
 import hashlib
+import json
+import logging
+import os
+import shutil
+import tempfile
+import time
 import unicodedata
+from datetime import date
+from pathlib import Path
 
 from django.conf import settings
+from django.core.files import File
 from django.db import transaction
 from django.utils import timezone
 
 from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol, Usuario
+
+logger = logging.getLogger(__name__)
 
 
 class ReglaNegocioError(Exception):
@@ -92,7 +103,8 @@ def enmascarar(destino):
 # ---------- Carga ----------
 
 @transaction.atomic
-def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_folio_expediente, folio_laboratorio):
+def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_folio_expediente, folio_laboratorio,
+                     origen="Carga manual"):
     if usuario.rol not in {Rol.LABORATORIO, Rol.EIRA}:
         raise ReglaNegocioError("Tu rol no puede cargar documentos.")
     if archivo.size > settings.TAMANO_MAXIMO_PDF:
@@ -112,8 +124,110 @@ def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_
     resultado.archivo.save("resultado.pdf", archivo, save=False)
     resultado.save()
     registrar(usuario, "Carga de PDF", resultado, "", Estado.CARGADO,
-              f"Folio de laboratorio {resultado.folio_laboratorio} · SHA-256 {sha[:16]}…")
+              f"{origen} · Folio de laboratorio {resultado.folio_laboratorio} · SHA-256 {sha[:16]}…")
     return resultado
+
+
+# ---------- Bandeja de entrada (el laboratorio solo deja archivos en una carpeta) ----------
+
+CAMPOS_HOJA = ("nombre", "fecha_nacimiento", "folio_expediente", "folio_laboratorio")
+TAMANO_MAXIMO_JSON = 64 * 1024
+
+
+def pendientes_en_bandeja(carpeta=None):
+    carpeta = Path(carpeta or settings.CARPETA_ENTRADA)
+    return sorted(carpeta.glob("*.pdf")) if carpeta.is_dir() else []
+
+
+def _archivar(destino, *rutas):
+    """Mueve los archivos de un envío a `destino` sin pisar envíos anteriores con el mismo nombre."""
+    destino.mkdir(parents=True, exist_ok=True)
+    sufijo = f"-{timezone.now():%Y%m%d-%H%M%S-%f}" if any((destino / r.name).exists() for r in rutas) else ""
+    finales = [destino / f"{r.stem}{sufijo}{r.suffix}" for r in rutas]
+    for ruta, final in zip(rutas, finales):
+        shutil.move(str(ruta), str(final))
+    return finales
+
+
+def _reclamar(ruta, trabajo):
+    """Mueve el archivo a la carpeta privada de esta importación; None si otra ya lo tomó."""
+    try:
+        os.rename(ruta, trabajo / ruta.name)
+    except FileNotFoundError:
+        return None
+    return trabajo / ruta.name
+
+
+def _reciente(ruta, ahora):
+    try:
+        return ahora - ruta.lstat().st_mtime < settings.SEGUNDOS_ESPERA_BANDEJA
+    except FileNotFoundError:
+        return False
+
+
+def importar_bandeja(usuario, carpeta=None):
+    """Carga cada PDF de la bandeja con los datos de su archivo .json gemelo.
+
+    Usa las mismas validaciones que la carga manual. Los PDFs cargados pasan a
+    `procesados/`; los rechazados, a `rechazados/` junto con un .txt con el motivo.
+    """
+    carpeta = Path(carpeta or settings.CARPETA_ENTRADA)
+    cargados, rechazados = [], []
+    ahora = time.time()
+    trabajo = None
+    for pdf in pendientes_en_bandeja(carpeta):
+        datos_json = pdf.with_suffix(".json")
+        if _reciente(pdf, ahora) or _reciente(datos_json, ahora):
+            continue
+        trabajo = trabajo or Path(tempfile.mkdtemp(prefix=".importando-", dir=carpeta))
+        pdf = _reclamar(pdf, trabajo)
+        if pdf is None:
+            continue
+        datos_json = _reclamar(datos_json, trabajo) or trabajo / datos_json.name
+        try:
+            if pdf.is_symlink() or datos_json.is_symlink():
+                raise ReglaNegocioError("No se aceptan enlaces simbólicos; deja el archivo real en la bandeja.")
+            if not datos_json.exists():
+                raise ReglaNegocioError(f"Falta {datos_json.name} con los datos de la hoja.")
+            if datos_json.stat().st_size > TAMANO_MAXIMO_JSON:
+                raise ReglaNegocioError(f"{datos_json.name} es demasiado grande para ser una hoja de datos.")
+            try:
+                hoja = json.loads(datos_json.read_text(encoding="utf-8"))
+                faltan = [c for c in CAMPOS_HOJA if not isinstance(hoja.get(c), str) or not hoja[c].strip()]
+                fecha = date.fromisoformat(hoja.get("fecha_nacimiento", ""))
+            except (ValueError, AttributeError, TypeError):
+                raise ReglaNegocioError(f"{datos_json.name} no es válido (JSON con fecha AAAA-MM-DD).")
+            if faltan:
+                raise ReglaNegocioError(f"En {datos_json.name} faltan: {', '.join(faltan)}.")
+            folio = hoja["folio_laboratorio"].strip().upper()
+            if Resultado.objects.filter(folio_laboratorio=folio).exists():
+                raise ReglaNegocioError(f"El folio de laboratorio {folio} ya fue cargado.")
+            with open(pdf, "rb") as f:
+                resultado = cargar_resultado(
+                    usuario, File(f, name=pdf.name),
+                    hoja_nombre=hoja["nombre"], hoja_fecha_nacimiento=fecha,
+                    hoja_folio_expediente=hoja["folio_expediente"], folio_laboratorio=folio,
+                    origen=f"Bandeja de entrada ({pdf.name})",
+                )
+        except Exception as e:
+            # Un error inesperado también rechaza el envío, para que no bloquee a los siguientes.
+            if not isinstance(e, ReglaNegocioError):
+                logger.exception("Error inesperado al importar %s", pdf.name)
+            motivo = str(e) if isinstance(e, ReglaNegocioError) else f"Error inesperado al cargar ({type(e).__name__})."
+            enviados = [pdf] + ([datos_json] if datos_json.exists() or datos_json.is_symlink() else [])
+            archivado = _archivar(carpeta / "rechazados", *enviados)[0]
+            try:
+                (carpeta / "rechazados" / f"{archivado.stem}.motivo.txt").write_text(motivo + "\n", encoding="utf-8")
+            except OSError:
+                logger.exception("No se pudo escribir el motivo de rechazo de %s", pdf.name)
+            registrar(usuario, "Importación rechazada", detalle=f"{pdf.name}: {motivo}")
+            rechazados.append((pdf.name, motivo))
+        else:
+            _archivar(carpeta / "procesados", pdf, datos_json)
+            cargados.append(resultado)
+    if trabajo:
+        trabajo.rmdir()
+    return cargados, rechazados
 
 
 # ---------- Asociación con verificación de identidad ----------

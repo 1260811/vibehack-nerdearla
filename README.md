@@ -26,6 +26,27 @@ Abre http://localhost:8000. Contraseña para todos los usuarios: `Demo2026!`
 
 Sin `--con-resultados`, el laboratorio sube los PDFs a mano desde `datos_demo/pdfs/` (los datos de cada hoja están en `datos_demo/resultados.json`).
 
+## Bandeja de entrada (el laboratorio solo deja archivos)
+
+El laboratorio no tiene que capturar ni avisar: deja cada PDF con un `.json` del mismo nombre en una carpeta compartida y el sistema lo carga con las mismas validaciones que la carga manual.
+
+```
+bandeja_entrada/
+  R1_LAB-24001.pdf
+  R1_LAB-24001.json   {"nombre": "...", "fecha_nacimiento": "1988-03-14", "folio_expediente": "EIRA-0001", "folio_laboratorio": "LAB-24001"}
+```
+
+```bash
+python manage.py cargar_demo --a-bandeja          # copia los 5 PDFs de ejemplo a la bandeja, como lo haría el laboratorio
+python manage.py importar_bandeja                 # los carga (o botón "Importar bandeja ahora" en la pantalla de carga)
+python manage.py importar_bandeja --vigilar 30    # revisa la carpeta cada 30 s
+```
+
+- Un archivo modificado hace menos de `EIRA_SEGUNDOS_ESPERA_BANDEJA` segundos (por defecto 5) se deja para la siguiente revisión, por si todavía se está copiando.
+- Los cargados pasan a `procesados/`; los rechazados (sin `.json`, datos incompletos, folio repetido, no es PDF) a `rechazados/` con un `.motivo.txt`. Todo queda en la bitácora.
+- La carpeta se cambia con `EIRA_CARPETA_ENTRADA` (puede ser una carpeta de red o sincronizada con Drive/OneDrive/un bucket). La carga se firma con el usuario `EIRA_USUARIO_BANDEJA` (por defecto `laboratorio@lab.test`).
+- Almacenamiento: los PDFs se guardan en `almacen_privado/`. Para pasar a la nube (S3, GCS, Azure) basta configurar `STORAGES` con django-storages; las vistas no cambian.
+
 ## Recorrido del documento
 
 ```
@@ -69,3 +90,24 @@ Cargado → Asociado → Revisado → Autorizado → Notificado → Consultado
 ```bash
 python manage.py test resultados
 ```
+
+### Tester del flujo real y brechas conocidas
+
+```bash
+python3 manage.py test resultados
+python3 manage.py probar_flujo
+```
+
+El segundo comando ejecuta `resultados/tests_flujo.py` con base de datos aislada y
+regenera [casos de borde](docs/casos_borde.md). No modifica los expedientes de la demo.
+Los fallos esperados (`expectedFailure`) documentan brechas **sin corregir la aplicación**:
+una suite verde no significa que estos controles ya existan. Un éxito inesperado exige
+revisar el contrato y retirar la marca si la brecha se resolvió.
+
+- [Flujo Mermaid y matriz de permisos reales](docs/diagrama_flujo.md).
+- [Diagrama renderizado PNG](docs/diagrama_flujo.png).
+- Fuente alternativa reproducible: `dot -Tpng docs/diagrama_flujo.dot -o docs/diagrama_flujo.png` (Graphviz, solo documentación).
+
+No se añadieron dependencias Python: se utiliza el Django existente y la biblioteca estándar.
+Los avisos, asignaciones médicas, representación legal, correcciones versionadas y respaldo
+de canales deben revisarse contra el informe antes de considerar un uso real con datos clínicos.

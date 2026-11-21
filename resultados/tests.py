@@ -1,5 +1,9 @@
+import json
+import os
 import shutil
 import tempfile
+from pathlib import Path
+from unittest import mock
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -207,3 +211,119 @@ class FlujoTests(TestCase):
         ]:
             self.client.login(username=correo, password="Demo2026!")
             self.assertEqual(self.client.get(url).status_code, 200, url)
+
+
+@override_settings(MEDIA_ROOT=MEDIA_TEMPORAL)
+class BandejaYPanelTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("cargar_demo", verbosity=0)
+
+    def setUp(self):
+        self.lab = Usuario.objects.get(username="laboratorio@lab.test")
+        self.eira = Usuario.objects.get(username="admin@eira.test")
+        self.carpeta = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.carpeta, ignore_errors=True)
+        ajustes = override_settings(CARPETA_ENTRADA=self.carpeta, SEGUNDOS_ESPERA_BANDEJA=0)
+        ajustes.enable()
+        self.addCleanup(ajustes.disable)
+
+    def test_importa_pdfs_de_la_bandeja_y_los_mueve(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        cargados, rechazados = servicios.importar_bandeja(self.lab)
+        self.assertEqual((len(cargados), rechazados), (5, []))
+        self.assertEqual(servicios.pendientes_en_bandeja(), [])
+        self.assertEqual(len(list((self.carpeta / "procesados").glob("*.pdf"))), 5)
+        r = Resultado.objects.get(folio_laboratorio="LAB-24001")
+        self.assertEqual((r.estado, r.cargado_por), (Estado.CARGADO, self.lab))
+        self.assertIn("Bandeja de entrada", r.eventos.get(accion="Carga de PDF").detalle)
+
+    def test_bandeja_rechaza_sin_datos_duplicados_y_no_pdf(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        (self.carpeta / "R2_LAB-24002.json").unlink()
+        (self.carpeta / "falso.pdf").write_bytes(b"no soy un pdf")
+        (self.carpeta / "falso.json").write_text(json.dumps({
+            "nombre": "X", "fecha_nacimiento": "2000-01-01", "folio_expediente": "EIRA-9", "folio_laboratorio": "LAB-9",
+        }))
+        servicios.importar_bandeja(self.lab)
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        cargados, rechazados = servicios.importar_bandeja(self.lab)
+        motivos = dict(rechazados)
+        self.assertEqual([r.folio_laboratorio for r in cargados], ["LAB-24002"])
+        self.assertIn("ya fue cargado", motivos["R1_LAB-24001.pdf"])
+        self.assertTrue((self.carpeta / "rechazados" / "falso.motivo.txt").exists())
+        self.assertTrue(EventoBitacora.objects.filter(accion="Importación rechazada", detalle__contains="Falta").exists())
+        self.assertFalse(Resultado.objects.filter(folio_laboratorio="LAB-9").exists())
+
+    def test_boton_importar_bandeja(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        self.client.login(username="laboratorio@lab.test", password="Demo2026!")
+        respuesta = self.client.post(reverse("importar_bandeja"), follow=True)
+        self.assertContains(respuesta, "5 documento(s) importado(s)")
+        self.client.login(username="medico@eira.test", password="Demo2026!")
+        self.assertEqual(self.client.post(reverse("importar_bandeja")).status_code, 403)
+
+    def test_bandeja_rechaza_enlaces_simbolicos_y_json_enorme(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        externo = self.carpeta.parent / f"{self.carpeta.name}-externo.pdf"
+        shutil.move(self.carpeta / "R1_LAB-24001.pdf", externo)
+        self.addCleanup(externo.unlink)
+        os.symlink(externo, self.carpeta / "R1_LAB-24001.pdf")
+        (self.carpeta / "R2_LAB-24002.json").write_text(" " * (servicios.TAMANO_MAXIMO_JSON + 1))
+        cargados, rechazados = servicios.importar_bandeja(self.lab)
+        motivos = dict(rechazados)
+        self.assertEqual(len(cargados), 3)
+        self.assertIn("enlaces simbólicos", motivos["R1_LAB-24001.pdf"])
+        self.assertIn("demasiado grande", motivos["R2_LAB-24002.pdf"])
+
+    def test_bandeja_espera_archivos_que_se_estan_copiando(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        with override_settings(SEGUNDOS_ESPERA_BANDEJA=60):
+            self.assertEqual(servicios.importar_bandeja(self.lab), ([], []))
+            self.client.login(username="laboratorio@lab.test", password="Demo2026!")
+            respuesta = self.client.post(reverse("importar_bandeja"), follow=True)
+            self.assertContains(respuesta, "pueden seguir copiándose")
+        self.assertEqual(len(servicios.pendientes_en_bandeja()), 5)
+
+    def test_importaciones_simultaneas_no_toman_el_mismo_pdf(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        pdf = self.carpeta / "R1_LAB-24001.pdf"
+        otra = Path(tempfile.mkdtemp(dir=self.carpeta))
+        self.assertEqual(servicios._reclamar(pdf, otra), otra / pdf.name)
+        cargados, _ = servicios.importar_bandeja(self.lab)
+        self.assertNotIn("LAB-24001", [r.folio_laboratorio for r in cargados])
+        self.assertEqual(sorted(p.name for p in self.carpeta.glob(".importando-*")), [])
+
+    def test_rechazos_con_el_mismo_nombre_no_se_pisan(self):
+        for _ in range(2):
+            (self.carpeta / "falso.pdf").write_bytes(b"no soy un pdf")
+            servicios.importar_bandeja(self.lab)
+        rechazados = self.carpeta / "rechazados"
+        self.assertEqual(len(list(rechazados.glob("falso*.pdf"))), 2)
+        self.assertEqual(len(list(rechazados.glob("falso*.motivo.txt"))), 2)
+
+    def test_bandeja_rechaza_campos_que_no_son_texto(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        datos = self.carpeta / "R1_LAB-24001.json"
+        hoja = json.loads(datos.read_text())
+        datos.write_text(json.dumps({**hoja, "fecha_nacimiento": None}))
+        (self.carpeta / "R2_LAB-24002.json").write_text(json.dumps({**hoja, "nombre": 7, "folio_laboratorio": "LAB-7"}))
+        cargados, rechazados = servicios.importar_bandeja(self.lab)
+        self.assertEqual(len(cargados), 3)
+        self.assertEqual(sorted(dict(rechazados)), ["R1_LAB-24001.pdf", "R2_LAB-24002.pdf"])
+        self.assertEqual(list(self.carpeta.glob(".importando-*")), [])
+
+    def test_error_inesperado_rechaza_el_envio_y_sigue(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        original = servicios.cargar_resultado
+
+        def falla_con_r1(usuario, archivo, **datos):
+            if datos["folio_laboratorio"] == "LAB-24001":
+                raise OSError("disco lleno")
+            return original(usuario, archivo, **datos)
+
+        with mock.patch.object(servicios, "cargar_resultado", falla_con_r1), self.assertLogs("resultados.servicios"):
+            cargados, rechazados = servicios.importar_bandeja(self.lab)
+        self.assertEqual(len(cargados), 4)
+        self.assertIn("Error inesperado", dict(rechazados)["R1_LAB-24001.pdf"])
+        self.assertTrue((self.carpeta / "rechazados" / "R1_LAB-24001.json").exists())

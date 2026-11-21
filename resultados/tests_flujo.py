@@ -7,11 +7,11 @@ from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from . import servicios as s
-from .tests import verificar_como_paciente
+from .tests import ultimo_codigo, verificar_como_paciente
 from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol, Usuario
 
 
@@ -156,7 +156,7 @@ class EscenariosFlujo(TestCase):
         self.assertTrue(self.r.eventos.filter(accion="Verificación fallida").exists())
 
     def test_sin_sesion(self):
-        """Anónimo: el enlace exige sesión y no entrega un PDF público."""
+        """Anónimo: la ruta interna del personal exige inicio de sesión, no sustituye al enlace de paciente."""
         self.assertEqual(self.client.get(reverse("descargar", args=[self.r.pk])).status_code, 302)
 
     def test_token_caducable(self):
@@ -279,3 +279,155 @@ class EscenariosFlujo(TestCase):
         self.autorizar()
         self.assertTrue(self.r.requiere_entrega_asistida)
         self.assertFalse(self.r.notificaciones.exists())
+
+    def pedir_codigo(self, cliente=None):
+        cliente = cliente or self.client
+        ruta = self.r.ultimo_aviso.enlace_simulado
+        self.assertEqual(cliente.post(ruta, {"paso": "fecha", "fecha_nacimiento": "1990-01-01"}).status_code, 302)
+        return ruta, ultimo_codigo(self.r)
+
+    def test_fecha_incorrecta(self):
+        """Paciente: fecha incorrecta no emite código, deniega PDF y registra un intento."""
+        self.autorizar()
+        ruta = self.r.ultimo_aviso.enlace_simulado
+        self.client.post(ruta, {"paso": "fecha", "fecha_nacimiento": "1992-01-01"})
+        self.assertFalse(self.r.notificaciones.filter(tipo=Notificacion.Tipo.CODIGO).exists())
+        self.assertEqual(self.r.enlaces.get().intentos_fallidos, 1)
+        self.assertEqual(self.client.get(ruta + "documento/").status_code, 404)
+
+    def test_codigo_incorrecto(self):
+        """Paciente: código incorrecto no acredita identidad ni entrega documento."""
+        self.autorizar()
+        ruta, codigo = self.pedir_codigo()
+        incorrecto = "000000" if codigo != "000000" else "111111"
+        self.client.post(ruta, {"paso": "codigo", "codigo": incorrecto})
+        self.assertEqual(self.client.get(ruta + "documento/").status_code, 404)
+        self.assertEqual(self.r.enlaces.get().intentos_fallidos, 1)
+        self.assertFalse(self.r.eventos.filter(accion="Acuse de recibo de la paciente").exists())
+
+    def test_fuerza_bruta_otras_sesiones(self):
+        """Paciente: tres errores repartidos entre sesiones bloquean el enlace y requieren asistencia."""
+        self.autorizar()
+        ruta = self.r.ultimo_aviso.enlace_simulado
+        for intento in range(s.MAX_INTENTOS_VERIFICACION):
+            respuesta = Client().post(ruta, {"paso": "fecha", "fecha_nacimiento": "1992-01-01"})
+            self.assertEqual(respuesta.status_code, 403 if intento == 2 else 200)
+        self.r.refresh_from_db()
+        self.assertTrue(self.r.requiere_entrega_asistida)
+        self.assertTrue(self.r.enlaces.get().bloqueado)
+        self.assertEqual(Client().get(ruta).status_code, 404)
+        self.assertEqual(self.r.eventos.filter(accion="Verificación fallida").count(), 3)
+
+    def test_codigo_sin_fecha(self):
+        """Paciente: conocer el código sin validar fecha en esa sesión no abre el documento."""
+        self.autorizar()
+        ruta, codigo = self.pedir_codigo()
+        otro = Client()
+        otro.post(ruta, {"paso": "codigo", "codigo": codigo})
+        self.assertEqual(otro.get(ruta + "documento/").status_code, 404)
+
+    def test_codigo_caducado(self):
+        """Paciente: código caducado se rechaza aunque el enlace siga vigente."""
+        self.autorizar()
+        ruta, codigo = self.pedir_codigo()
+        self.r.enlaces.update(codigo_expira=s.timezone.now() - s.VIGENCIA_CODIGO)
+        respuesta = self.client.post(ruta, {"paso": "codigo", "codigo": codigo})
+        self.assertContains(respuesta, "El código venció")
+        self.assertEqual(self.client.get(ruta + "documento/").status_code, 404)
+
+    def test_codigo_rotado(self):
+        """Paciente: al solicitar otro código el anterior deja de ser válido."""
+        self.autorizar()
+        with patch.object(s.secrets, "randbelow", side_effect=[123456, 654321]):
+            ruta, anterior = self.pedir_codigo()
+            self.pedir_codigo()
+        self.client.post(ruta, {"paso": "codigo", "codigo": anterior})
+        self.assertEqual(self.client.get(ruta + "documento/").status_code, 404)
+        self.client.post(ruta, {"paso": "codigo", "codigo": "654321"})
+        respuesta = self.client.get(ruta + "documento/")
+        respuesta.close()
+        self.assertEqual(respuesta.status_code, 200)
+
+    def test_enlace_otro_expediente(self):
+        """Paciente: verificar un enlace no habilita el enlace de otra paciente ni su PDF."""
+        self.autorizar()
+        verificar_como_paciente(self.client, self.r)
+        otra = Paciente.objects.create(nombre="Ana Gómez", fecha_nacimiento="1980-02-02", folio_expediente="E-2",
+                                        correo="ana@example.test")
+        otra.refresh_from_db()
+        otro = s.cargar_resultado(self.lab, SimpleUploadedFile("otra.pdf", b"%PDF-1.4 Otra paciente"),
+                                  otra.nombre, otra.fecha_nacimiento, otra.folio_expediente, "L-2")
+        s.asociar(otro, otra, self.eira)
+        s.aprobar_revision(otro, self.eira)
+        s.autorizar(otro, self.medico)
+        ruta = otro.ultimo_aviso.enlace_simulado
+        self.assertEqual(self.client.get(ruta + "documento/").status_code, 404)
+        self.client.post(ruta, {"paso": "fecha", "fecha_nacimiento": self.p.fecha_nacimiento.isoformat()})
+        self.assertFalse(otro.notificaciones.filter(tipo=Notificacion.Tipo.CODIGO).exists())
+
+    def test_antes_autorizacion(self):
+        """Paciente: antes de autorizar no existe enlace emitido y un identificador de resultado no sirve como token."""
+        self.revisar()
+        self.assertFalse(self.r.enlaces.exists())
+        self.assertFalse(self.r.notificaciones.exists())
+        ruta = reverse("acceso_paciente", args=[str(self.r.pk)])
+        self.assertEqual(self.client.get(ruta).status_code, 404)
+        self.assertEqual(self.client.get(ruta + "documento/").status_code, 404)
+
+    def test_aviso_separa_codigo(self):
+        """Sistema: el aviso contiene enlace pero no código, enviado aparte por SMS si el aviso fue por correo."""
+        self.autorizar()
+        ruta, codigo = self.pedir_codigo()
+        aviso = self.r.ultimo_aviso
+        verificacion = self.r.notificaciones.get(tipo=Notificacion.Tipo.CODIGO)
+        self.assertIn(ruta, aviso.mensaje)
+        self.assertNotIn(codigo, aviso.mensaje)
+        self.assertNotIn(ruta, verificacion.mensaje)
+        self.assertEqual((aviso.canal, verificacion.canal), ("correo", "sms"))
+
+    def test_enlace_caducado_sesion_verificada(self):
+        """Paciente: enlace caducado deniega también el PDF de una sesión previamente verificada."""
+        self.autorizar()
+        ruta = verificar_como_paciente(self.client, self.r)
+        self.r.enlaces.update(expira=s.timezone.now())
+        self.assertEqual(self.client.get(ruta + "documento/").status_code, 404)
+
+    def test_reintento_revoca_anterior(self):
+        """EIRA: reintento de aviso cambia a SMS y revoca el enlace anterior incluso ya verificado."""
+        self.autorizar()
+        ruta = verificar_como_paciente(self.client, self.r)
+        s.simular_fallo_aviso(self.r, self.eira)
+        nuevo = s.reintentar_aviso(self.r, self.eira)
+        self.assertEqual(nuevo.canal, "sms")
+        self.assertEqual(self.client.get(ruta + "documento/").status_code, 404)
+        self.assertEqual(self.client.get(nuevo.enlace_simulado).status_code, 200)
+
+    def test_fallback_simulado(self):
+        """Sistema/EIRA: dos fallas simuladas correo y SMS derivan a entrega asistida y revocación."""
+        self.autorizar()
+        s.simular_fallo_aviso(self.r, self.eira)
+        aviso = s.reintentar_aviso(self.r, self.eira)
+        self.assertEqual(aviso.canal, "sms")
+        s.simular_fallo_aviso(self.r, self.eira)
+        self.assertTrue(self.r.requiere_entrega_asistida)
+        with self.assertRaises(s.ReglaNegocioError):
+            s.reintentar_aviso(self.r, self.eira)
+        s.registrar_entrega_asistida(self.r, self.eira, "Paciente", "Identificación")
+        self.assertEqual(self.client.get(aviso.enlace_simulado).status_code, 404)
+
+    @unittest.expectedFailure
+    def test_fecha_malformada_limite(self):
+        """Paciente: BRECHA, fechas vacías o malformadas no consumen intentos ni se auditan; limitar también entradas inválidas."""
+        self.autorizar()
+        ruta = self.r.ultimo_aviso.enlace_simulado
+        for _ in range(s.MAX_INTENTOS_VERIFICACION):
+            self.client.post(ruta, {"paso": "fecha", "fecha_nacimiento": ""})
+        self.assertTrue(self.r.enlaces.get().bloqueado)
+
+    @unittest.expectedFailure
+    def test_reenvio_codigo_limite(self):
+        """Paciente: BRECHA, solicitudes repetidas con fecha correcta generan códigos sin límite; limitar frecuencia y evitar abuso del canal."""
+        self.autorizar()
+        for _ in range(5):
+            self.pedir_codigo()
+        self.assertLessEqual(self.r.notificaciones.filter(tipo=Notificacion.Tipo.CODIGO).count(), 3)

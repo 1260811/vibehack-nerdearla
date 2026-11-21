@@ -485,8 +485,11 @@ def puede_ver_documento(usuario, resultado):
 
 
 def integridad_correcta(resultado):
-    with resultado.archivo.open("rb") as f:
-        return calcular_sha256(f) == resultado.sha256
+    try:
+        with resultado.archivo.open("rb") as f:
+            return calcular_sha256(f) == resultado.sha256
+    except FileNotFoundError:
+        return False
 
 
 @transaction.atomic

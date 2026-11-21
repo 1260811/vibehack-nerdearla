@@ -15,7 +15,6 @@
     {% if user.rol == 'eira' %}<a href="{% url 'panel' %}">Panel</a><a href="{% url 'laboratorio' %}">Cargar</a>{% endif %}
     {% if user.rol == 'medico' %}<a href="{% url 'medico' %}">Por autorizar</a><a href="{% url 'panel' %}">Panel</a>{% endif %}
     {% if user.rol == 'eira' or user.rol == 'medico' %}<a href="{% url 'avisos' %}">Avisos simulados</a><a href="{% url 'bitacora' %}">Bitácora</a>{% endif %}
-    {% if user.rol == 'paciente' %}<a href="{% url 'mis_resultados' %}">Mis resultados</a>{% endif %}
   </nav>
   <div class="sesion">
     <span>{{ user.first_name }} · {{ user.get_rol_display }}</span>

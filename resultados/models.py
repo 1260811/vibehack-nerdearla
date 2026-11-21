@@ -111,7 +111,7 @@ class Resultado(models.Model):
 
     @cached_property
     def ultimo_aviso(self):
-        return self.notificaciones.order_by("-intento", "-creada").first()
+        return self.notificaciones.filter(tipo=Notificacion.Tipo.AVISO).order_by("-intento", "-creada").first()
 
     @cached_property
     def avance(self):
@@ -156,16 +156,43 @@ class Notificacion(models.Model):
         ENVIADA = "enviada", "Enviada (simulada)"
         FALLIDA = "fallida", "Falló la entrega (simulada)"
 
+    class Tipo(models.TextChoices):
+        AVISO = "aviso", "Aviso con enlace"
+        CODIGO = "codigo", "Código de verificación"
+
     resultado = models.ForeignKey(Resultado, on_delete=models.PROTECT, related_name="notificaciones")
     canal = models.CharField(max_length=10, choices=Canal.choices)
     destino = models.CharField(max_length=150)
     mensaje = models.TextField()
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ENVIADA)
     intento = models.PositiveSmallIntegerField(default=1)
+    tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.AVISO)
+    # Solo en la simulación: un proveedor real no guardaría el enlace en claro.
+    enlace_simulado = models.CharField(max_length=200, blank=True)
     creada = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-creada"]
+
+
+class EnlaceAcceso(models.Model):
+    """Enlace único del aviso. Se guarda solo la huella del token y del código, nunca el valor."""
+    aviso = models.OneToOneField(Notificacion, on_delete=models.PROTECT, related_name="enlace")
+    resultado = models.ForeignKey(Resultado, on_delete=models.PROTECT, related_name="enlaces")
+    token_hash = models.CharField(max_length=64, unique=True)
+    expira = models.DateTimeField()
+    codigo_hash = models.CharField(max_length=64, blank=True)
+    codigo_expira = models.DateTimeField(null=True, blank=True)
+    codigo_canal = models.CharField(max_length=10, blank=True)
+    codigo_destino = models.CharField(max_length=150, blank=True)
+    intentos_fallidos = models.PositiveSmallIntegerField(default=0)
+    bloqueado = models.BooleanField(default=False)
+    verificado_en = models.DateTimeField(null=True, blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def vigente(self):
+        return not self.bloqueado and self.expira > timezone.now()
 
 
 class EventoBitacora(models.Model):

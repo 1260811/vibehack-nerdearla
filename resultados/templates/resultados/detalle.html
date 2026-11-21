@@ -83,8 +83,8 @@
     {% if notificaciones %}
       <h2>Avisos</h2>
       <div class="tabla-scroll"><table>
-        <thead><tr><th scope="col">Intento</th><th scope="col">Canal</th><th scope="col">Destino</th><th scope="col">Estado</th><th scope="col">Fecha</th></tr></thead>
-        <tbody>{% for a in notificaciones %}<tr><td>{{ a.intento }}</td><td>{{ a.get_canal_display }}</td><td>{{ a.destino }}</td><td>{{ a.get_estado_display }}</td><td>{{ a.creada|date:"d/m/Y H:i" }}</td></tr>{% endfor %}</tbody>
+        <thead><tr><th scope="col">Tipo</th><th scope="col">Intento</th><th scope="col">Canal</th><th scope="col">Destino</th><th scope="col">Estado</th><th scope="col">Fecha</th></tr></thead>
+        <tbody>{% for a in notificaciones %}<tr><td>{{ a.get_tipo_display }}</td><td>{% if a.tipo == 'aviso' %}{{ a.intento }}{% endif %}</td><td>{{ a.get_canal_display }}</td><td>{{ a.destino }}</td><td>{{ a.get_estado_display }}</td><td>{{ a.creada|date:"d/m/Y H:i" }}</td></tr>{% endfor %}</tbody>
       </table></div>
       {% if es_eira and r.estado == 'notificado' and not r.requiere_entrega_asistida %}
         {% if r.ultimo_aviso.estado == 'enviada' %}

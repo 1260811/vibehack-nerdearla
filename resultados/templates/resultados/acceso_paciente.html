@@ -1,0 +1,31 @@
+{% extends "resultados/base.html" %}
+{% block titulo %}Tu resultado · EIRA{% endblock %}
+{% block clase_body %}portal-paciente{% endblock %}
+{% block contenido %}
+<section class="tarjeta acceso">
+  <h1>Tu resultado de EIRA</h1>
+  {% if error %}<div class="aviso aviso-error" role="alert">{{ error }}</div>{% endif %}
+  {% if paso == "fecha" %}
+    <p>Para proteger tu información confirmamos tu identidad en dos pasos. No necesitas cuenta ni contraseña.</p>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="paso" value="fecha">
+      <label for="fecha_nacimiento">Paso 1 de 2 · Tu fecha de nacimiento</label>
+      <input type="date" id="fecha_nacimiento" name="fecha_nacimiento" required>
+      <button class="btn">Continuar</button>
+    </form>
+  {% elif paso == "codigo" %}
+    <p>Te enviamos un código de 6 dígitos por {{ enlace.get_codigo_canal_display|default:enlace.codigo_canal }} a <strong>{{ destino_codigo }}</strong>. Vence en 10 minutos.</p>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="paso" value="codigo">
+      <label for="codigo">Paso 2 de 2 · Código de verificación</label>
+      <input id="codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+      <button class="btn">Ver mi resultado</button>
+    </form>
+  {% else %}
+    {% if r.requiere_contacto %}<div class="aviso aviso-warning">Tu médico pidió conversar contigo sobre este resultado. EIRA te contactará.</div>{% endif %}
+    <p>Resultado de Papanicolaou · folio {{ r.folio_laboratorio }}. Tu verificación quedó registrada como acuse de recibo.</p>
+    <p><a class="btn" href="{% url 'descargar_paciente' token %}">Descargar PDF</a></p>
+    <iframe class="visor" src="{% url 'documento_paciente' token %}#navpanes=0&view=FitH" title="PDF del resultado"></iframe>
+  {% endif %}
+</section>
+{% endblock %}

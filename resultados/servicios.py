@@ -1,12 +1,16 @@
 """Reglas de negocio: máquina de estados, verificación de identidad y bitácora."""
 import hashlib
+import hmac
+import secrets
+from datetime import timedelta
 import unicodedata
 
 from django.conf import settings
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
 
-from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol, Usuario
+from .models import EnlaceAcceso, Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol
 
 
 class ReglaNegocioError(Exception):
@@ -24,18 +28,20 @@ TRANSICIONES = {
     (Estado.AUTORIZADO, Estado.NOTIFICADO): set(),  # solo el sistema, al autorizar
     (Estado.AUTORIZADO, Estado.ENTREGADO_ASISTIDO): {Rol.EIRA},
     (Estado.NOTIFICADO, Estado.ENTREGADO_ASISTIDO): {Rol.EIRA},
-    (Estado.NOTIFICADO, Estado.CONSULTADO): {Rol.PACIENTE},
+    (Estado.NOTIFICADO, Estado.CONSULTADO): set(),  # la paciente, vía enlace verificado
 }
 
 MAX_FALLOS_AVISO = 2
-
-ESTADOS_VISIBLES_PACIENTE = {Estado.AUTORIZADO, Estado.NOTIFICADO, Estado.CONSULTADO, Estado.ENTREGADO_ASISTIDO}
+VIGENCIA_ENLACE = timedelta(hours=72)
+VIGENCIA_CODIGO = timedelta(minutes=10)
+MAX_INTENTOS_VERIFICACION = 3
 
 MENSAJE_AVISO = (
-    "Hola {nombre}: tienes un documento disponible en el portal de EIRA. "
-    "Inicia sesión con tu usuario para consultarlo. "
+    "Hola {nombre}: tienes un documento disponible en EIRA. "
+    "Ábrelo en {url} (vence en 72 horas). Te pediremos tu fecha de nacimiento y un código. "
     "Por tu seguridad, este mensaje no contiene información clínica."
 )
+MENSAJE_CODIGO = "Tu código de EIRA es {codigo}. Vence en 10 minutos. No lo compartas con nadie."
 
 
 def registrar(usuario, accion, resultado=None, anterior="", nuevo="", detalle=""):
@@ -192,7 +198,11 @@ def autorizar(resultado, usuario, requiere_contacto=False):
 # ---------- Entrega ----------
 
 def tiene_acceso_digital(paciente):
-    return Usuario.objects.filter(paciente=paciente, is_active=True).exists()
+    return paciente.preferencia_entrega == Paciente.Preferencia.DIGITAL and bool(paciente.correo or paciente.telefono)
+
+
+def _huella(valor):
+    return hashlib.sha256(valor.encode()).hexdigest()
 
 
 def _canal_disponible(paciente, excluir=None):
@@ -211,10 +221,17 @@ def _olvidar_aviso_en_cache(resultado):
 
 def _crear_aviso(resultado, canal, destino, intento):
     _olvidar_aviso_en_cache(resultado)
-    return Notificacion.objects.create(
-        resultado=resultado, canal=canal, destino=destino, intento=intento,
-        mensaje=MENSAJE_AVISO.format(nombre=resultado.paciente.nombre.split()[0]),
+    ahora = timezone.now()
+    resultado.enlaces.filter(expira__gt=ahora).update(expira=ahora)  # solo vale el enlace más reciente
+    token = secrets.token_urlsafe(32)
+    ruta = reverse("acceso_paciente", args=[token])
+    aviso = Notificacion.objects.create(
+        resultado=resultado, canal=canal, destino=destino, intento=intento, enlace_simulado=ruta,
+        mensaje=MENSAJE_AVISO.format(nombre=resultado.paciente.nombre.split()[0], url=settings.SITIO_URL + ruta),
     )
+    EnlaceAcceso.objects.create(aviso=aviso, resultado=resultado, token_hash=_huella(token),
+                                expira=ahora + VIGENCIA_ENLACE)
+    return aviso
 
 
 def _marcar_entrega_asistida(resultado, motivo):
@@ -226,12 +243,9 @@ def _marcar_entrega_asistida(resultado, motivo):
 def enviar_aviso_automatico(resultado):
     paciente = resultado.paciente
     if not tiene_acceso_digital(paciente):
-        _marcar_entrega_asistida(resultado, "La paciente no tiene acceso al portal.")
+        _marcar_entrega_asistida(resultado, "La paciente prefiere entrega asistida o no tiene correo ni teléfono.")
         return None
     canal, destino = _canal_disponible(paciente)
-    if canal is None:
-        _marcar_entrega_asistida(resultado, "La paciente no tiene correo ni teléfono registrados.")
-        return None
     aviso = _crear_aviso(resultado, canal, destino, intento=1)
     _transicionar(resultado, None, Estado.NOTIFICADO,
                   f"Aviso automático por {Notificacion.Canal(canal).label.lower()}",
@@ -256,7 +270,7 @@ def simular_fallo_aviso(resultado, usuario):
     _olvidar_aviso_en_cache(resultado)
     registrar(usuario, "Fallo de entrega del aviso (simulado)", resultado,
               detalle=f"Intento {aviso.intento} por {aviso.get_canal_display().lower()}.")
-    fallos = resultado.notificaciones.filter(estado=Notificacion.Estado.FALLIDA).count()
+    fallos = resultado.notificaciones.filter(tipo=Notificacion.Tipo.AVISO, estado=Notificacion.Estado.FALLIDA).count()
     if fallos >= MAX_FALLOS_AVISO:
         _marcar_entrega_asistida(resultado, f"{fallos} intentos de aviso fallidos.")
 
@@ -281,6 +295,70 @@ def registrar_entrega_asistida(resultado, usuario, receptor, verificacion):
     detalle = f"Recibió: {receptor}. Identidad verificada con: {verificacion}."
     resultado.entrega_asistida_detalle = detalle
     _transicionar(resultado, usuario, Estado.ENTREGADO_ASISTIDO, "Entrega asistida", detalle)
+    resultado.enlaces.filter(expira__gt=timezone.now()).update(expira=timezone.now())
+
+
+# ---------- Acceso de la paciente por enlace ----------
+
+def buscar_enlace(token):
+    return (EnlaceAcceso.objects.select_related("resultado__paciente", "aviso")
+            .filter(token_hash=_huella(token or "")).first())
+
+
+def _fallo_verificacion(enlace, motivo):
+    enlace.intentos_fallidos += 1
+    restantes = MAX_INTENTOS_VERIFICACION - enlace.intentos_fallidos
+    registrar(None, "Verificación fallida", enlace.resultado,
+              detalle=f"{motivo}. Intento {enlace.intentos_fallidos} de {MAX_INTENTOS_VERIFICACION}.")
+    if restantes <= 0:
+        enlace.bloqueado = True
+        _marcar_entrega_asistida(enlace.resultado, "Enlace bloqueado por intentos de verificación fallidos.")
+    enlace.save(update_fields=["intentos_fallidos", "bloqueado"])
+    if restantes <= 0:
+        return "Por seguridad bloqueamos este enlace. EIRA te contactará para entregarte tu resultado."
+    return f"Los datos no coinciden. Te quedan {restantes} intento{'s' if restantes != 1 else ''}."
+
+
+def enviar_codigo(enlace):
+    canal, destino = _canal_disponible(enlace.resultado.paciente, excluir=enlace.aviso.canal)
+    codigo = f"{secrets.randbelow(10 ** 6):06d}"
+    enlace.codigo_hash, enlace.codigo_expira = _huella(codigo), timezone.now() + VIGENCIA_CODIGO
+    enlace.codigo_canal, enlace.codigo_destino = canal, destino
+    enlace.save(update_fields=["codigo_hash", "codigo_expira", "codigo_canal", "codigo_destino"])
+    Notificacion.objects.create(resultado=enlace.resultado, canal=canal, destino=destino,
+                                tipo=Notificacion.Tipo.CODIGO, mensaje=MENSAJE_CODIGO.format(codigo=codigo))
+    registrar(None, f"Código de verificación enviado por {Notificacion.Canal(canal).label.lower()}",
+              enlace.resultado, detalle=f"Destino: {enmascarar(destino)}")
+
+
+@transaction.atomic
+def validar_fecha(enlace, fecha):
+    """Paso 1. Devuelve un mensaje de error, o None si la fecha coincide (y envía el código)."""
+    if not enlace.vigente:
+        return "Este enlace ya no es válido."
+    if fecha != enlace.resultado.paciente.fecha_nacimiento:
+        return _fallo_verificacion(enlace, "Fecha de nacimiento incorrecta")
+    enviar_codigo(enlace)
+    return None
+
+
+@transaction.atomic
+def validar_codigo(enlace, codigo, ip=""):
+    """Paso 2. Devuelve un mensaje de error, o None si el código es correcto (y registra el acuse)."""
+    if not enlace.vigente:
+        return "Este enlace ya no es válido."
+    if not enlace.codigo_hash or enlace.codigo_expira < timezone.now():
+        return "El código venció. Vuelve a escribir tu fecha de nacimiento para recibir uno nuevo."
+    if not hmac.compare_digest(_huella((codigo or "").strip()), enlace.codigo_hash):
+        return _fallo_verificacion(enlace, "Código incorrecto")
+    enlace.verificado_en, enlace.codigo_hash = timezone.now(), ""
+    enlace.save(update_fields=["verificado_en", "codigo_hash"])
+    registrar(None, "Acuse de recibo de la paciente", enlace.resultado, detalle=(
+        f"Enlace enviado por {enlace.aviso.get_canal_display().lower()}. Identidad verificada con fecha de nacimiento "
+        f"y código por {Notificacion.Canal(enlace.codigo_canal).label.lower()} a {enmascarar(enlace.codigo_destino)}."
+        + (f" IP: {ip}." if ip else "")
+    ))
+    return None
 
 
 # ---------- Acceso al documento ----------
@@ -290,12 +368,6 @@ def puede_ver_documento(usuario, resultado):
         return True
     if usuario.rol == Rol.LABORATORIO:
         return resultado.cargado_por_id == usuario.id
-    if usuario.rol == Rol.PACIENTE:
-        return (
-            usuario.paciente_id is not None
-            and resultado.paciente_id == usuario.paciente_id
-            and resultado.estado in ESTADOS_VISIBLES_PACIENTE
-        )
     return False
 
 
@@ -306,10 +378,13 @@ def integridad_correcta(resultado):
 
 @transaction.atomic
 def registrar_acceso(usuario, resultado, descarga=False):
+    """usuario=None significa la paciente, con un enlace ya verificado."""
     accion = "Descarga del documento" if descarga else "Visualización del documento"
-    if usuario.rol == Rol.PACIENTE and resultado.estado == Estado.NOTIFICADO:
+    if usuario is None:
+        accion += " por la paciente"
+    if usuario is None and resultado.estado == Estado.NOTIFICADO:
         try:
-            _transicionar(resultado, usuario, Estado.CONSULTADO, "Consulta por la paciente", accion)
+            _transicionar(resultado, None, Estado.CONSULTADO, "Consulta por la paciente", accion, sistema=True)
             return
         except ReglaNegocioError:
             resultado.refresh_from_db()

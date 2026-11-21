@@ -17,8 +17,8 @@ INICIO_POR_ROL = {
     Rol.LABORATORIO: "laboratorio",
     Rol.EIRA: "panel",
     Rol.MEDICO: "medico",
-    Rol.PACIENTE: "mis_resultados",
 }
+SESION_ENLACES = "enlaces_verificados"
 
 
 def rol_requerido(*roles):
@@ -170,6 +170,10 @@ def documento(request, pk, descarga=False):
         servicios.registrar(request.user, "Integridad fallida", resultado, detalle="El hash del archivo no coincide.")
         return HttpResponse("El documento no pasó la verificación de integridad.", status=409)
     servicios.registrar_acceso(request.user, resultado, descarga=descarga)
+    return _respuesta_pdf(resultado, descarga)
+
+
+def _respuesta_pdf(resultado, descarga):
     respuesta = FileResponse(
         resultado.archivo.open("rb"), content_type="application/pdf",
         as_attachment=descarga, filename=f"resultado_{resultado.folio_laboratorio}.pdf",
@@ -178,20 +182,60 @@ def documento(request, pk, descarga=False):
     return respuesta
 
 
-@rol_requerido(Rol.PACIENTE)
-def mis_resultados(request):
-    resultados = Resultado.objects.filter(
-        paciente_id=request.user.paciente_id, estado__in=servicios.ESTADOS_VISIBLES_PACIENTE
-    )
-    return render(request, "resultados/mis_resultados.html", {"resultados": resultados})
+def acceso_paciente(request, token):
+    enlace = servicios.buscar_enlace(token)
+    if enlace is None or not enlace.vigente:
+        return render(request, "resultados/acceso_invalido.html",
+                      {"bloqueado": bool(enlace and enlace.bloqueado)}, status=404)
+    clave_fecha = f"enlace_{enlace.pk}_fecha"
+    verificado = enlace.pk in request.session.get(SESION_ENLACES, [])
+    error = None
+    if request.method == "POST" and not verificado:
+        paso = request.POST.get("paso")
+        if paso == "fecha":
+            try:
+                fecha = date.fromisoformat(request.POST.get("fecha_nacimiento", ""))
+            except ValueError:
+                error = "Escribe tu fecha de nacimiento completa."
+            else:
+                error = servicios.validar_fecha(enlace, fecha)
+                if error is None:
+                    request.session[clave_fecha] = True
+        elif paso == "codigo" and request.session.get(clave_fecha):
+            error = servicios.validar_codigo(enlace, request.POST.get("codigo"), request.META.get("REMOTE_ADDR", ""))
+            if error is None:
+                request.session[SESION_ENLACES] = request.session.get(SESION_ENLACES, []) + [enlace.pk]
+                request.session.set_expiry(30 * 60)
+            elif "venció" in error:
+                request.session.pop(clave_fecha, None)
+        enlace.refresh_from_db()
+        if enlace.bloqueado:
+            return render(request, "resultados/acceso_invalido.html", {"bloqueado": True}, status=403)
+        if error is None:
+            return redirect("acceso_paciente", token=token)
+    if verificado:
+        paso = "documento"
+    elif request.session.get(clave_fecha) and enlace.codigo_hash:
+        paso = "codigo"
+    else:
+        paso = "fecha"
+    return render(request, "resultados/acceso_paciente.html", {
+        "token": token, "enlace": enlace, "r": enlace.resultado, "paso": paso, "error": error,
+        "destino_codigo": servicios.enmascarar(enlace.codigo_destino) if enlace.codigo_destino else "",
+        "intentos_restantes": servicios.MAX_INTENTOS_VERIFICACION - enlace.intentos_fallidos,
+    })
 
 
-@rol_requerido(Rol.PACIENTE)
-def ver_resultado(request, pk):
-    resultado = get_object_or_404(Resultado, pk=pk)
-    if not servicios.puede_ver_documento(request.user, resultado):
+def documento_paciente(request, token, descarga=False):
+    enlace = servicios.buscar_enlace(token)
+    if enlace is None or not enlace.vigente or enlace.pk not in request.session.get(SESION_ENLACES, []):
         raise Http404
-    return render(request, "resultados/ver_resultado.html", {"r": resultado})
+    resultado = enlace.resultado
+    if not servicios.integridad_correcta(resultado):
+        servicios.registrar(None, "Integridad fallida", resultado, detalle="El hash del archivo no coincide.")
+        return HttpResponse("El documento no pasó la verificación de integridad.", status=409)
+    servicios.registrar_acceso(None, resultado, descarga=descarga)
+    return _respuesta_pdf(resultado, descarga)
 
 
 @rol_requerido(Rol.EIRA, Rol.MEDICO)

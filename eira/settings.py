@@ -139,3 +139,6 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_HTTPONLY = True
 X_FRAME_OPTIONS = "SAMEORIGIN"
 SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# URL pública usada en los enlaces de los avisos simulados.
+SITIO_URL = os.environ.get("EIRA_SITIO_URL", "http://localhost:8000")

@@ -14,8 +14,9 @@ urlpatterns = [
     path("resultados/<uuid:pk>/accion/<slug:nombre>/", views.accion, name="accion"),
     path("resultados/<uuid:pk>/documento/", views.documento, name="documento"),
     path("resultados/<uuid:pk>/descargar/", views.documento, {"descarga": True}, name="descargar"),
-    path("mis-resultados/", views.mis_resultados, name="mis_resultados"),
-    path("mis-resultados/<uuid:pk>/", views.ver_resultado, name="ver_resultado"),
+    path("acceso/<str:token>/", views.acceso_paciente, name="acceso_paciente"),
+    path("acceso/<str:token>/documento/", views.documento_paciente, name="documento_paciente"),
+    path("acceso/<str:token>/descargar/", views.documento_paciente, {"descarga": True}, name="descargar_paciente"),
     path("avisos/", views.avisos, name="avisos"),
     path("bitacora/", views.bitacora, name="bitacora"),
 ]

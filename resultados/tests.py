@@ -186,6 +186,46 @@ class FlujoTests(TestCase):
         self.assertEqual(self.client.get(reverse("documento", args=[r1.pk])).status_code, 302)
         self.assertEqual(self.client.get(reverse("panel")).status_code, 302)
 
+    def test_documentos_paciente_denegados_quedan_en_bitacora(self):
+        r = self.resultado("LAB-24001")
+        self.llevar_a_autorizado(r, self.p1)
+        ruta = r.ultimo_aviso.enlace_simulado
+        token = ruta.split("/")[2]
+        self.client.post(ruta, {"paso": "fecha", "fecha_nacimiento": self.p1.fecha_nacimiento.isoformat()})
+        codigo = ultimo_codigo(r)
+        for nombre in ("documento_paciente", "descargar_paciente"):
+            with self.subTest(nombre=nombre):
+                anterior = EventoBitacora.objects.count()
+                respuesta = self.client.get(reverse(nombre, args=[token]), {"codigo": codigo})
+                self.assertEqual(respuesta.status_code, 404)
+                self.assertEqual(EventoBitacora.objects.count(), anterior + 1)
+                evento = EventoBitacora.objects.first()
+                self.assertEqual(evento.accion, "Acceso denegado al documento")
+                self.assertEqual(evento.resultado, r)
+                self.assertIsNone(evento.usuario)
+                registro = str(EventoBitacora.objects.filter(pk=evento.pk).values().get())
+                self.assertNotIn(token, registro)
+                self.assertNotIn(codigo, registro)
+
+    def test_documentos_paciente_con_enlace_invalido_quedan_en_bitacora(self):
+        r = self.resultado("LAB-24001")
+        self.llevar_a_autorizado(r, self.p1)
+        enlace = r.enlaces.get()
+        token = r.ultimo_aviso.enlace_simulado.split("/")[2]
+        enlace.bloqueado = True
+        enlace.save()
+        for valor, resultado in (("inexistente", None), (token, r)):
+            for nombre in ("documento_paciente", "descargar_paciente"):
+                with self.subTest(token=valor, nombre=nombre):
+                    anterior = EventoBitacora.objects.count()
+                    self.assertEqual(self.client.get(reverse(nombre, args=[valor])).status_code, 404)
+                    self.assertEqual(EventoBitacora.objects.count(), anterior + 1)
+                    evento = EventoBitacora.objects.first()
+                    self.assertEqual(evento.accion, "Acceso denegado al documento")
+                    self.assertEqual(evento.resultado, resultado)
+                    self.assertIsNone(evento.usuario)
+                    self.assertNotIn(valor, str(EventoBitacora.objects.filter(pk=evento.pk).values().get()))
+
     def test_codigo_llega_por_el_otro_canal_y_queda_acuse(self):
         r = self.resultado("LAB-24001")
         self.llevar_a_autorizado(r, self.p1)

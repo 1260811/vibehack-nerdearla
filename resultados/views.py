@@ -256,6 +256,7 @@ def acceso_paciente(request, token):
 def documento_paciente(request, token, descarga=False):
     enlace = servicios.buscar_enlace(token)
     if enlace is None or not enlace.vigente or enlace.pk not in request.session.get(SESION_ENLACES, []):
+        servicios.registrar(None, "Acceso denegado al documento", enlace.resultado if enlace else None)
         raise Http404
     resultado = enlace.resultado
     if not servicios.integridad_correcta(resultado):

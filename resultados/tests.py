@@ -194,7 +194,7 @@ class BandejaYPanelTests(TestCase):
         self.eira = Usuario.objects.get(username="admin@eira.test")
         self.carpeta = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.carpeta, ignore_errors=True)
-        ajustes = override_settings(CARPETA_ENTRADA=self.carpeta)
+        ajustes = override_settings(CARPETA_ENTRADA=self.carpeta, SEGUNDOS_ESPERA_BANDEJA=0)
         ajustes.enable()
         self.addCleanup(ajustes.disable)
 
@@ -245,6 +245,12 @@ class BandejaYPanelTests(TestCase):
         self.assertEqual(len(cargados), 3)
         self.assertIn("enlaces simbólicos", motivos["R1_LAB-24001.pdf"])
         self.assertIn("demasiado grande", motivos["R2_LAB-24002.pdf"])
+
+    def test_bandeja_espera_archivos_que_se_estan_copiando(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        with override_settings(SEGUNDOS_ESPERA_BANDEJA=60):
+            self.assertEqual(servicios.importar_bandeja(self.lab), ([], []))
+        self.assertEqual(len(servicios.pendientes_en_bandeja()), 5)
 
     def test_avance_y_panel_por_etapa(self):
         call_command("cargar_demo", "--a-bandeja", verbosity=0)

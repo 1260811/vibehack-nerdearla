@@ -2,6 +2,7 @@
 import hashlib
 import json
 import shutil
+import time
 import unicodedata
 from datetime import date, timedelta
 from pathlib import Path
@@ -131,6 +132,13 @@ def _mover(ruta, destino):
     shutil.move(str(ruta), str(destino / ruta.name))
 
 
+def _reciente(ruta, ahora):
+    try:
+        return ahora - ruta.lstat().st_mtime < settings.SEGUNDOS_ESPERA_BANDEJA
+    except FileNotFoundError:
+        return False
+
+
 def importar_bandeja(usuario, carpeta=None):
     """Carga cada PDF de la bandeja con los datos de su archivo .json gemelo.
 
@@ -139,8 +147,11 @@ def importar_bandeja(usuario, carpeta=None):
     """
     carpeta = Path(carpeta or settings.CARPETA_ENTRADA)
     cargados, rechazados = [], []
+    ahora = time.time()
     for pdf in pendientes_en_bandeja(carpeta):
         datos_json = pdf.with_suffix(".json")
+        if _reciente(pdf, ahora) or _reciente(datos_json, ahora):
+            continue
         try:
             if pdf.is_symlink() or datos_json.is_symlink():
                 raise ReglaNegocioError("No se aceptan enlaces simbólicos; deja el archivo real en la bandeja.")

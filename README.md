@@ -42,6 +42,7 @@ python manage.py importar_bandeja                 # los carga (o botón "Importa
 python manage.py importar_bandeja --vigilar 30    # revisa la carpeta cada 30 s
 ```
 
+- Un archivo modificado hace menos de `EIRA_SEGUNDOS_ESPERA_BANDEJA` segundos (por defecto 5) se deja para la siguiente revisión, por si todavía se está copiando.
 - Los cargados pasan a `procesados/`; los rechazados (sin `.json`, datos incompletos, folio repetido, no es PDF) a `rechazados/` con un `.motivo.txt`. Todo queda en la bitácora.
 - La carpeta se cambia con `EIRA_CARPETA_ENTRADA` (puede ser una carpeta de red o sincronizada con Drive/OneDrive/un bucket). La carga se firma con el usuario `EIRA_USUARIO_BANDEJA` (por defecto `laboratorio@lab.test`).
 - Almacenamiento: los PDFs se guardan en `almacen_privado/`. Para pasar a la nube (S3, GCS, Azure) basta configurar `STORAGES` con django-storages; las vistas no cambian.

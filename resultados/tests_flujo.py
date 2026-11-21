@@ -62,8 +62,7 @@ class EscenariosFlujo(TestCase):
         for usuario, accion, datos, estado in [
             (self.eira, "asociar", {"paciente_id": self.p.pk}, Estado.ASOCIADO),
             (self.eira, "aprobar", {}, Estado.REVISADO),
-            (self.medico, "autorizar", {}, Estado.AUTORIZADO),
-            (self.eira, "notificar", {"canal": "correo"}, Estado.NOTIFICADO),
+            (self.medico, "autorizar", {}, Estado.NOTIFICADO),
         ]:
             self.client.force_login(usuario)
             self.assertEqual(self.client.post(reverse("accion", args=[self.r.pk, accion]), datos).status_code, 302)
@@ -166,15 +165,14 @@ class EscenariosFlujo(TestCase):
     @unittest.expectedFailure
     def test_aviso_diagnostico(self):
         """EIRA: BRECHA, plantilla alterada admite diagnóstico sin filtro; validar antes de guardar."""
-        self.autorizar()
+        self.revisar()
         with patch.object(s, "MENSAJE_AVISO", "Diagnóstico: cáncer; lesión LSIL"):
             with self.assertRaises(s.ReglaNegocioError):
-                s.notificar(self.r, self.eira, "correo")
+                s.autorizar(self.r, self.medico)
 
     def test_aviso_neutro(self):
         """EIRA: aviso predeterminado no revela hallazgos ni diagnóstico."""
         self.autorizar()
-        s.notificar(self.r, self.eira, "sms")
         mensaje = self.r.notificaciones.get().mensaje.lower()
         for termino in ("diagnóstico", "lesión", "lsil", "cáncer", "papanicolaou"):
             self.assertNotIn(termino, mensaje)
@@ -186,16 +184,16 @@ class EscenariosFlujo(TestCase):
         self.p.save()
         self.paciente.is_active = False
         self.paciente.save()
-        self.autorizar()
-        for canal in ("correo", "sms"):
-            with self.assertRaises(s.ReglaNegocioError):
-                s.notificar(self.r, self.eira, canal)
+        self.revisar()
+        self.assertIsNone(s.autorizar(self.r, self.medico))
+        self.assertTrue(self.r.requiere_entrega_asistida)
+        self.assertFalse(self.r.notificaciones.exists())
         s.registrar_entrega_asistida(self.r, self.eira, "Paciente en recepción", "Documento de identidad")
         self.assertEqual(self.r.estado, Estado.ENTREGADO_ASISTIDO)
 
     @unittest.expectedFailure
     def test_falla_canal(self):
-        """Sistema: BRECHA, no hay proveedor ni falla/fallback correo→SMS→asistida; solo simulación."""
+        """Sistema: BRECHA, el respaldo correo→SMS→asistida es simulado; falta proveedor real que reporte fallas."""
         self.assertTrue(callable(getattr(s, "notificar_con_respaldo", None)))
 
     @unittest.expectedFailure
@@ -268,5 +266,5 @@ class EscenariosFlujo(TestCase):
         self.p.preferencia_entrega = Paciente.Preferencia.ASISTIDA
         self.p.save()
         self.autorizar()
-        with self.assertRaises(s.ReglaNegocioError):
-            s.notificar(self.r, self.eira, "correo")
+        self.assertTrue(self.r.requiere_entrega_asistida)
+        self.assertFalse(self.r.notificaciones.exists())

@@ -4,7 +4,7 @@
 <p class="nota">No se envía ningún correo ni SMS real. Así se vería cada mensaje.</p>
 {% for a in avisos %}
 <section class="tarjeta mensaje">
-  <div class="cabecera-mensaje"><span class="canal">{{ a.get_canal_display }}</span> Para: <strong>{{ a.destino }}</strong> · {{ a.creada|date:"d/m/Y H:i" }} · <em>{{ a.estado }}</em></div>
+  <div class="cabecera-mensaje"><span class="canal">{{ a.get_canal_display }}</span> Para: <strong>{{ a.destino }}</strong> · {{ a.creada|date:"d/m/Y H:i" }} · <em>{{ a.get_estado_display }}</em> · intento {{ a.intento }}</div>
   <p>{{ a.mensaje }}</p>
   <p class="nota">Documento {{ a.resultado.folio_laboratorio }} · expediente {{ a.resultado.paciente.folio_expediente }}</p>
 </section>

@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from functools import wraps
 
 from django.contrib import messages
@@ -6,11 +7,12 @@ from django.core.exceptions import PermissionDenied
 from django.conf import settings
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import servicios
 from .forms import CargaForm
-from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol
+from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol, duracion
 
 INICIO_POR_ROL = {
     Rol.LABORATORIO: "laboratorio",
@@ -82,18 +84,41 @@ def _con_avance(consulta):
 
 @rol_requerido(Rol.EIRA, Rol.MEDICO)
 def panel(request):
-    filtro = request.GET.get("etapa", "")
-    estados = servicios.estados_de_etapa(filtro)
-    resultados = _con_avance(Resultado.objects.all())
-    if estados:
-        resultados = resultados.filter(estado__in=estados)
+    try:
+        dia = date.fromisoformat(request.GET.get("dia", ""))
+    except ValueError:
+        dia = timezone.localdate()
+    base = Resultado.objects.select_related("paciente")
+    del_dia = base.filter(autorizado_en__date=dia)
+    con_fallo = Notificacion.objects.filter(estado=Notificacion.Estado.FALLIDA).values("resultado")
+    grupos = {
+        "por_asociar": ("Por asociar", base.filter(estado=Estado.CARGADO)),
+        "por_revisar": ("Por revisar", base.filter(estado=Estado.ASOCIADO)),
+        "por_autorizar": ("Por autorizar", base.filter(estado=Estado.REVISADO)),
+        "devueltos": ("Devueltos al laboratorio", base.filter(estado=Estado.DEVUELTO)),
+        "sin_abrir": ("Avisadas sin abrir", del_dia.filter(estado=Estado.NOTIFICADO)),
+        "reintentos": ("Con reintentos de aviso", del_dia.filter(pk__in=con_fallo)),
+        "asistida": ("Requieren entrega asistida", del_dia.filter(
+            requiere_entrega_asistida=True, estado__in=[Estado.AUTORIZADO, Estado.NOTIFICADO])),
+        "entregados": ("Entregados", del_dia.filter(estado__in=[Estado.CONSULTADO, Estado.ENTREGADO_ASISTIDO])),
+    }
+    kpis = [{"clave": k, "etiqueta": etiqueta, "n": qs.count()} for k, (etiqueta, qs) in grupos.items()]
+    entregados_dia = list(Resultado.objects.filter(entregado_en__date=dia).values_list("creado", "entregado_en"))
+    promedio = (duracion(sum((fin - ini for ini, fin in entregados_dia), timedelta()) / len(entregados_dia))
+                if entregados_dia else None)
+    ver = request.GET.get("ver", "")
+    if ver in grupos:
+        titulo, resultados = grupos[ver]
     else:
-        filtro = ""
+        ver, titulo, resultados = "", "Todos los documentos", base
     contacto = Resultado.objects.filter(requiere_contacto=True).exclude(
         estado__in=[Estado.ENTREGADO_ASISTIDO, Estado.DEVUELTO]
     ).select_related("paciente")
     return render(request, "resultados/panel.html", {
-        "ind": servicios.indicadores_panel(), "resultados": resultados, "filtro": filtro, "contacto": contacto,
+        "dia": dia, "es_hoy": dia == timezone.localdate(), "ver": ver, "titulo": titulo,
+        "pendientes": kpis[:4], "autorizados": kpis[4:], "total_autorizados": del_dia.count(),
+        "promedio": promedio, "n_entregados_dia": len(entregados_dia),
+        "resultados": resultados, "contacto": contacto,
     })
 
 
@@ -111,7 +136,7 @@ def detalle(request, pk):
     contexto = {
         "r": resultado,
         "eventos": resultado.eventos.select_related("usuario"),
-        "notificaciones": resultado.notificaciones.all(),
+        "notificaciones": resultado.notificaciones.order_by("-intento", "-creada"),
         "es_eira": request.user.rol == Rol.EIRA,
         "es_medico": request.user.rol == Rol.MEDICO,
     }
@@ -139,11 +164,17 @@ def accion(request, pk, nombre):
             servicios.devolver(resultado, usuario, datos.get("motivo"))
             messages.success(request, "Documento devuelto.")
         elif nombre == "autorizar":
-            servicios.autorizar(resultado, usuario, datos.get("requiere_contacto") == "on")
-            messages.success(request, "Resultado autorizado.")
-        elif nombre == "notificar":
-            servicios.notificar(resultado, usuario, datos.get("canal"))
-            messages.success(request, "Aviso simulado enviado. Revisa la bandeja de avisos.")
+            aviso = servicios.autorizar(resultado, usuario, datos.get("requiere_contacto") == "on")
+            if aviso:
+                messages.success(request, f"Resultado autorizado. Aviso enviado automáticamente por {aviso.get_canal_display().lower()}.")
+            else:
+                messages.success(request, "Resultado autorizado. La paciente requiere entrega asistida.")
+        elif nombre == "fallo":
+            servicios.simular_fallo_aviso(resultado, usuario)
+            messages.success(request, "Fallo de entrega simulado.")
+        elif nombre == "reintentar":
+            aviso = servicios.reintentar_aviso(resultado, usuario)
+            messages.success(request, f"Aviso reenviado por {aviso.get_canal_display().lower()} (intento {aviso.intento}).")
         elif nombre == "entrega":
             servicios.registrar_entrega_asistida(resultado, usuario, datos.get("receptor"), datos.get("verificacion"))
             messages.success(request, "Entrega asistida registrada.")

@@ -100,6 +100,6 @@ flowchart TB
 - Ilegibilidad y varias pacientes dependen de revisión humana; la firma `%PDF-` no valida contenido.
 - Una devolución obliga a una nueva carga independiente: no hay vínculo de versiones, corrección ni anulación de la anterior.
 - No hay estado pendiente de identidad ni rechazado separado: el documento permanece cargado o se devuelve.
-- Los avisos son plantillas fijas simuladas: no se prueba entrega real ni bloqueo de cuenta. Elegir otro canal es manual; desde notificado no puede volver a notificarse.
+- Los avisos son plantillas fijas simuladas: no se prueba entrega real ni bloqueo de cuenta. El aviso se envía al autorizar; el reintento usa otro canal y tras 2 fallos queda entrega asistida.
 - Sesión de 30 minutos no equivale a token por descarga. Las URL autenticadas se reutilizan.
 - `expectedFailure` mantiene la suite ejecutable, pero cada ❌ del informe es un contrato de seguridad incumplido, no una validación aprobada.

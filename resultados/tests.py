@@ -48,7 +48,6 @@ class FlujoTests(TestCase):
     def test_flujo_feliz_hasta_consulta(self):
         r = self.resultado("LAB-24001")
         self.llevar_a_autorizado(r, self.p1)
-        servicios.notificar(r, self.eira, Notificacion.Canal.CORREO)
         self.assertEqual(r.estado, Estado.NOTIFICADO)
         aviso = Notificacion.objects.get(resultado=r)
         self.assertNotIn("NILM", aviso.mensaje)
@@ -66,7 +65,6 @@ class FlujoTests(TestCase):
     def test_consulta_simultanea_no_falla(self):
         r = self.resultado("LAB-24001")
         self.llevar_a_autorizado(r, self.p1)
-        servicios.notificar(r, self.eira, Notificacion.Canal.CORREO)
         paciente = r.paciente.usuario
         copia_vieja = Resultado.objects.get(pk=r.pk)
         servicios.registrar_acceso(paciente, r)
@@ -123,10 +121,41 @@ class FlujoTests(TestCase):
     def test_paciente_sin_acceso_digital_requiere_entrega_asistida(self):
         r = self.resultado("LAB-24003")
         self.llevar_a_autorizado(r, self.p3)
-        with self.assertRaises(servicios.ReglaNegocioError):
-            servicios.notificar(r, self.eira, Notificacion.Canal.SMS)
+        self.assertEqual(r.estado, Estado.AUTORIZADO)
+        self.assertTrue(r.requiere_entrega_asistida)
+        self.assertFalse(Notificacion.objects.filter(resultado=r).exists())
         servicios.registrar_entrega_asistida(r, self.eira, "La paciente en recepción", "INE")
         self.assertEqual(r.estado, Estado.ENTREGADO_ASISTIDO)
+
+    def test_reintentos_de_aviso_hasta_entrega_asistida(self):
+        r = self.resultado("LAB-24001")
+        self.llevar_a_autorizado(r, self.p1)
+        with self.assertRaises(servicios.ReglaNegocioError):
+            servicios.reintentar_aviso(r, self.eira)
+        servicios.simular_fallo_aviso(r, self.eira)
+        reintento = servicios.reintentar_aviso(r, self.eira)
+        self.assertEqual((reintento.intento, reintento.canal), (2, Notificacion.Canal.SMS))
+        self.assertEqual(r.le_toca, ("Paciente", "Consultar el documento"))
+        servicios.simular_fallo_aviso(r, self.eira)
+        self.assertTrue(r.requiere_entrega_asistida)
+        with self.assertRaises(servicios.ReglaNegocioError):
+            servicios.reintentar_aviso(r, self.eira)
+        self.assertEqual(r.notificaciones.count(), 2)
+        self.assertEqual(r.le_toca, ("EIRA", "Entrega asistida"))
+
+    def test_panel_por_secciones_y_dia(self):
+        r = self.resultado("LAB-24001")
+        self.llevar_a_autorizado(r, self.p1)
+        servicios.registrar_acceso(r.paciente.usuario, r)
+        self.client.login(username="admin@eira.test", password="Demo2026!")
+        respuesta = self.client.get(reverse("panel"), {"ver": "entregados"})
+        self.assertContains(respuesta, "Pendientes")
+        self.assertContains(respuesta, "LAB-24001")
+        self.assertNotContains(respuesta, "LAB-24002")
+        self.assertIsNotNone(respuesta.context["promedio"])
+        otro_dia = self.client.get(reverse("panel"), {"dia": "2020-01-01", "ver": "entregados"})
+        self.assertNotContains(otro_dia, "LAB-24001")
+        self.assertEqual(otro_dia.context["total_autorizados"], 0)
 
     def test_paciente_no_ve_documento_ajeno_ni_no_autorizado(self):
         r1, r2 = self.resultado("LAB-24001"), self.resultado("LAB-24002")
@@ -298,24 +327,3 @@ class BandejaYPanelTests(TestCase):
         self.assertEqual(len(cargados), 4)
         self.assertIn("Error inesperado", dict(rechazados)["R1_LAB-24001.pdf"])
         self.assertTrue((self.carpeta / "rechazados" / "R1_LAB-24001.json").exists())
-
-    def test_avance_y_panel_por_etapa(self):
-        call_command("cargar_demo", "--a-bandeja", verbosity=0)
-        servicios.importar_bandeja(self.lab)
-        r1 = Resultado.objects.get(folio_laboratorio="LAB-24001")
-        r5 = Resultado.objects.get(folio_laboratorio="LAB-24005")
-        servicios.asociar(r1, Paciente.objects.get(folio_expediente="EIRA-0001"), self.eira)
-        servicios.devolver(r5, self.eira, "Escaneo ilegible")
-        self.assertEqual([p["estado"] for p in r1.pasos][:3], ["hecho", "hecho", "actual"])
-        self.assertEqual(r1.responsable, "EIRA")
-        self.assertEqual([p["estado"] for p in r5.pasos][:2], ["hecho", "devuelto"])
-
-        ind = servicios.indicadores_panel()
-        etapas = {e["clave"]: e["n"] for e in ind["etapas"]}
-        self.assertEqual((etapas["por_asociar"], etapas["en_revision"], etapas["devueltos"]), (3, 1, 1))
-        self.assertEqual((ind["total"], ind["en_proceso"]), (5, 4))
-
-        self.client.login(username="admin@eira.test", password="Demo2026!")
-        respuesta = self.client.get(reverse("panel"), {"etapa": "devueltos"})
-        self.assertContains(respuesta, "LAB-24005")
-        self.assertNotContains(respuesta, "LAB-24001")

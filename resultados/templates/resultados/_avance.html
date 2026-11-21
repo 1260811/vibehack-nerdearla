@@ -1,3 +1,0 @@
-<ol class="avance" aria-label="Avance: {{ r.pasos_hechos }} de 6 pasos">
-  {% for p in r.pasos %}<li class="paso-{{ p.estado }}" title="{{ p.etiqueta }}: {{ p.estado }}"><span class="solo-lector">{{ p.etiqueta }}: {{ p.estado }}</span></li>{% endfor %}
-</ol>

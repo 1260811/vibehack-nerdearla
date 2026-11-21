@@ -5,7 +5,12 @@
   {% if r.requiere_contacto %}<span class="etiqueta-alerta">Requiere contacto</span>{% endif %}</h1>
 
 <ol class="recorrido">
-  {% for p in r.pasos %}<li class="{{ p.estado }}">{{ p.etiqueta }}</li>{% endfor %}
+  <li class="{% if r.estado != 'devuelto' %}hecho{% endif %}">Cargado</li>
+  <li class="{% if r.asociado_por %}hecho{% endif %}">Asociado</li>
+  <li class="{% if r.revisado_por %}hecho{% endif %}">Revisado</li>
+  <li class="{% if r.autorizado_por %}hecho{% endif %}">Autorizado</li>
+  <li class="{% if r.estado == 'notificado' or r.estado == 'consultado' or r.notificaciones.exists %}hecho{% endif %}">Notificado</li>
+  <li class="{% if r.estado == 'consultado' or r.estado == 'entregado_asistido' %}hecho{% endif %}">Entregado</li>
 </ol>
 
 <div class="columnas">
@@ -72,18 +77,26 @@
       </details>
     {% endif %}
 
-    {% if es_eira and r.estado == 'autorizado' %}
-      <h2>Entrega</h2>
-      {% if acceso_digital %}
-      <form method="post" action="{% url 'accion' r.pk 'notificar' %}" class="en-linea">{% csrf_token %}
-        <select name="canal"><option value="correo">Correo</option><option value="sms">SMS</option></select>
-        <button class="btn">Enviar aviso simulado</button>
-      </form>
-      {% else %}<p class="nota">La paciente no tiene acceso al portal: usa la entrega asistida.</p>{% endif %}
+    {% if r.requiere_entrega_asistida and not r.completado %}
+      <div class="aviso aviso-warning">Requiere entrega asistida: registra quién recibió el documento y cómo se verificó su identidad.</div>
+    {% endif %}
+    {% if notificaciones %}
+      <h2>Avisos</h2>
+      <div class="tabla-scroll"><table>
+        <thead><tr><th scope="col">Intento</th><th scope="col">Canal</th><th scope="col">Destino</th><th scope="col">Estado</th><th scope="col">Fecha</th></tr></thead>
+        <tbody>{% for a in notificaciones %}<tr><td>{{ a.intento }}</td><td>{{ a.get_canal_display }}</td><td>{{ a.destino }}</td><td>{{ a.get_estado_display }}</td><td>{{ a.creada|date:"d/m/Y H:i" }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% if es_eira and r.estado == 'notificado' and not r.requiere_entrega_asistida %}
+        {% if r.ultimo_aviso.estado == 'enviada' %}
+        <form method="post" action="{% url 'accion' r.pk 'fallo' %}" class="en-linea">{% csrf_token %}<button class="btn btn-secundario">Simular fallo de entrega</button></form>
+        {% else %}
+        <form method="post" action="{% url 'accion' r.pk 'reintentar' %}" class="en-linea">{% csrf_token %}<button class="btn">Reintentar aviso</button></form>
+        {% endif %}
+      {% endif %}
     {% endif %}
 
     {% if es_eira and r.estado == 'autorizado' or es_eira and r.estado == 'notificado' %}
-      <details class="devolver" {% if not acceso_digital %}open{% endif %}><summary>Registrar entrega asistida</summary>
+      <details class="devolver" {% if not acceso_digital or r.requiere_entrega_asistida %}open{% endif %}><summary>Registrar entrega asistida</summary>
         <form method="post" action="{% url 'accion' r.pk 'entrega' %}">{% csrf_token %}
           <label>¿Quién recibió? <input name="receptor" required placeholder="Ej. la paciente en recepción"></label>
           <label>¿Cómo se verificó la identidad? <input name="verificacion" required placeholder="Ej. INE + fecha de nacimiento"></label>

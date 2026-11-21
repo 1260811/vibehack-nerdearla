@@ -10,6 +10,13 @@
     <p class="nota">Captura los datos tal como aparecen impresos en la hoja. EIRA los comparará con el expediente.</p>
   </section>
   <section class="tarjeta">
+    <h2>Bandeja de entrada</h2>
+    <p class="nota">El laboratorio también puede dejar cada PDF con un <code>.json</code> del mismo nombre en
+      <code>{{ carpeta_entrada }}</code>; el sistema los carga con las mismas validaciones, sin avisar a nadie.</p>
+    <form method="post" action="{% url 'importar_bandeja' %}" class="en-linea">{% csrf_token %}
+      <button class="btn">Importar bandeja ahora</button>
+      <span>{{ en_bandeja|length }} PDF(s) esperando</span>
+    </form>
     <h2>Mis cargas</h2>
     <table>
       <tr><th>Folio lab.</th><th>Nombre en hoja</th><th>Estado</th><th>Observaciones</th></tr>

@@ -1,4 +1,5 @@
 import json
+import shutil
 from datetime import date
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from django.core.files import File
 from django.core.management.base import BaseCommand
 
 from resultados import servicios
-from resultados.models import Paciente, Resultado, Usuario
+from resultados.models import Paciente, Resultado, Rol, Usuario
 
 DATOS = Path(settings.BASE_DIR) / "datos_demo"
 
@@ -17,8 +18,10 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--con-resultados", action="store_true", help="Carga los PDFs sintéticos como 'Cargado'.")
+        parser.add_argument("--a-bandeja", action="store_true",
+                            help="Copia los PDFs sintéticos (con su .json) a la bandeja de entrada, como lo haría el laboratorio.")
 
-    def handle(self, *args, con_resultados=False, **opciones):
+    def handle(self, *args, con_resultados=False, a_bandeja=False, **opciones):
         pacientes = {}
         for p in json.loads((DATOS / "pacientes.json").read_text(encoding="utf-8")):
             pacientes[p["id"]], _ = Paciente.objects.update_or_create(
@@ -38,7 +41,9 @@ class Command(BaseCommand):
             )
             usuario.set_password(u["password_demo"])
             usuario.save()
-        self.stdout.write(self.style.SUCCESS(f"{len(pacientes)} pacientes y {Usuario.objects.count()} usuarios listos."))
+        # Las pacientes ya no tienen cuenta: entran con el enlace del aviso. Se desactivan las de versiones anteriores.
+        Usuario.objects.filter(rol=Rol.PACIENTE).update(is_active=False)
+        self.stdout.write(self.style.SUCCESS(f"{len(pacientes)} pacientes y {Usuario.objects.filter(is_active=True).count()} usuarios listos."))
 
         if con_resultados:
             laboratorio = Usuario.objects.get(username="laboratorio@lab.test")
@@ -54,3 +59,12 @@ class Command(BaseCommand):
                         folio_laboratorio=r["hoja"]["folio_laboratorio"],
                     )
             self.stdout.write(self.style.SUCCESS("PDFs de ejemplo cargados."))
+
+        if a_bandeja:
+            carpeta = Path(settings.CARPETA_ENTRADA)
+            carpeta.mkdir(parents=True, exist_ok=True)
+            for r in json.loads((DATOS / "resultados.json").read_text(encoding="utf-8")):
+                shutil.copy(DATOS / "pdfs" / r["archivo"], carpeta / r["archivo"])
+                (carpeta / r["archivo"]).with_suffix(".json").write_text(
+                    json.dumps(r["hoja"], ensure_ascii=False, indent=2), encoding="utf-8")
+            self.stdout.write(self.style.SUCCESS(f"PDFs de ejemplo copiados a {carpeta}."))

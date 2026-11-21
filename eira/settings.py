@@ -132,6 +132,12 @@ LOGOUT_REDIRECT_URL = "login"
 # ni ruta que sirva esta carpeta; solo la vista `documento`, que verifica permisos.
 MEDIA_ROOT = BASE_DIR / "almacen_privado"
 TAMANO_MAXIMO_PDF = 10 * 1024 * 1024
+
+# Carpeta compartida donde el laboratorio deja los PDFs (local, de red o sincronizada con la nube).
+CARPETA_ENTRADA = Path(os.environ.get("EIRA_CARPETA_ENTRADA", BASE_DIR / "bandeja_entrada"))
+USUARIO_BANDEJA = os.environ.get("EIRA_USUARIO_BANDEJA", "laboratorio@lab.test")
+# Un archivo modificado hace menos de estos segundos puede seguir copiándose: se deja para la siguiente revisión.
+SEGUNDOS_ESPERA_BANDEJA = int(os.environ.get("EIRA_SEGUNDOS_ESPERA_BANDEJA", "5"))
 DATA_UPLOAD_MAX_MEMORY_SIZE = TAMANO_MAXIMO_PDF
 
 SESSION_COOKIE_AGE = 30 * 60

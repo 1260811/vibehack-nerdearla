@@ -4,6 +4,7 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.conf import settings
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -53,7 +54,32 @@ def laboratorio(request):
             messages.success(request, f"Documento {r.folio_laboratorio} cargado. EIRA lo asociará con el expediente.")
             return redirect("laboratorio")
     cargas = Resultado.objects.filter(cargado_por=request.user)
-    return render(request, "resultados/laboratorio.html", {"form": form, "cargas": cargas})
+    return render(request, "resultados/laboratorio.html", {
+        "form": form, "cargas": cargas,
+        "en_bandeja": servicios.pendientes_en_bandeja(), "carpeta_entrada": settings.CARPETA_ENTRADA,
+    })
+
+
+@require_POST
+@rol_requerido(Rol.LABORATORIO, Rol.EIRA)
+def importar_bandeja(request):
+    cargados, rechazados = servicios.importar_bandeja(request.user)
+    if not cargados and not rechazados:
+        en_espera = len(servicios.pendientes_en_bandeja())
+        messages.warning(request, (
+            f"{en_espera} PDF(s) llegaron hace menos de {settings.SEGUNDOS_ESPERA_BANDEJA} s y pueden seguir "
+            "copiándose; vuelve a importar en unos segundos."
+        ) if en_espera else "La bandeja de entrada está vacía.")
+    if cargados:
+        messages.success(request, f"{len(cargados)} documento(s) importado(s) desde la bandeja: "
+                                  + ", ".join(r.folio_laboratorio for r in cargados) + ".")
+    for nombre, motivo in rechazados:
+        messages.error(request, f"{nombre} rechazado: {motivo}")
+    return redirect("laboratorio")
+
+
+def _con_avance(consulta):
+    return consulta.select_related("paciente").prefetch_related("notificaciones")
 
 
 @rol_requerido(Rol.EIRA, Rol.MEDICO)
@@ -99,8 +125,8 @@ def panel(request):
 @rol_requerido(Rol.MEDICO)
 def medico(request):
     return render(request, "resultados/medico.html", {
-        "pendientes": Resultado.objects.filter(estado=Estado.REVISADO).select_related("paciente"),
-        "autorizados": Resultado.objects.filter(autorizado_por=request.user).select_related("paciente")[:20],
+        "pendientes": _con_avance(Resultado.objects.filter(estado=Estado.REVISADO)),
+        "autorizados": _con_avance(Resultado.objects.filter(autorizado_por=request.user))[:20],
     })
 
 
@@ -222,6 +248,7 @@ def acceso_paciente(request, token):
     return render(request, "resultados/acceso_paciente.html", {
         "token": token, "enlace": enlace, "r": enlace.resultado, "paso": paso, "error": error,
         "destino_codigo": servicios.enmascarar(enlace.codigo_destino) if enlace.codigo_destino else "",
+        "canal_codigo": Notificacion.Canal(enlace.codigo_canal).label if enlace.codigo_canal else "",
         "intentos_restantes": servicios.MAX_INTENTOS_VERIFICACION - enlace.intentos_fallidos,
     })
 

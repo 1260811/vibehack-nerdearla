@@ -14,7 +14,7 @@
       <button class="btn">Continuar</button>
     </form>
   {% elif paso == "codigo" %}
-    <p>Te enviamos un código de 6 dígitos por {{ enlace.get_codigo_canal_display|default:enlace.codigo_canal }} a <strong>{{ destino_codigo }}</strong>. Vence en 10 minutos.</p>
+    <p>Te enviamos un código de 6 dígitos por {{ canal_codigo }} a <strong>{{ destino_codigo }}</strong>. Vence en 10 minutos.</p>
     <form method="post">{% csrf_token %}
       <input type="hidden" name="paso" value="codigo">
       <label for="codigo">Paso 2 de 2 · Código de verificación</label>

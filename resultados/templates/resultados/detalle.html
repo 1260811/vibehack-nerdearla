@@ -4,13 +4,13 @@
 <h1>Resultado {{ r.folio_laboratorio }} {% include "resultados/_estado.html" %}
   {% if r.requiere_contacto %}<span class="etiqueta-alerta">Requiere contacto</span>{% endif %}</h1>
 
-<ol class="recorrido">
-  <li class="{% if r.estado != 'devuelto' %}hecho{% endif %}">Cargado</li>
-  <li class="{% if r.asociado_por %}hecho{% endif %}">Asociado</li>
-  <li class="{% if r.revisado_por %}hecho{% endif %}">Revisado</li>
-  <li class="{% if r.autorizado_por %}hecho{% endif %}">Autorizado</li>
-  <li class="{% if r.estado == 'notificado' or r.estado == 'consultado' or r.notificaciones.exists %}hecho{% endif %}">Notificado</li>
-  <li class="{% if r.estado == 'consultado' or r.estado == 'entregado_asistido' %}hecho{% endif %}">Entregado</li>
+<ol class="recorrido" aria-label="Avance del documento">
+  {% for s in r.avance.segmentos %}
+  <li class="{% if s.clase == 'hecho' %}hecho{% endif %}"{% if s.clase == 'actual' or s.clase == 'error' %} aria-current="step"{% endif %}>
+    {% if s.clase == 'hecho' %}<span aria-hidden="true">✓ </span>{% elif s.clase == 'error' %}<span aria-hidden="true">✕ </span>{% endif %}{{ s.nombre }}
+    <span class="sr-only">{% if s.clase == 'hecho' %}(completado){% elif s.clase == 'actual' %}(paso actual){% elif s.clase == 'error' %}(devuelto){% elif s.clase == 'omitido' %}(no aplica){% else %}(pendiente){% endif %}</span>
+  </li>
+  {% endfor %}
 </ol>
 
 <div class="columnas">
@@ -40,16 +40,20 @@
       {% for c in candidatos %}
       <div class="candidato {% if c.coincide_todo %}ok{% else %}no{% endif %}">
         <strong>{{ c.paciente.nombre }} · {{ c.paciente.folio_expediente }}</strong>
-        <table>
-          <tr><th>Dato</th><th>En la hoja</th><th>En el expediente</th><th></th></tr>
+        <div class="tabla-scroll" role="region" aria-label="Comparación con {{ c.paciente.folio_expediente }}" tabindex="0"><table>
+          <tr><th scope="col">Dato</th><th scope="col">En la hoja</th><th scope="col">En el expediente</th><th scope="col">Coincidencia</th></tr>
           {% for f in c.comparacion %}
           <tr><td>{{ f.campo }}</td><td>{{ f.hoja|date:"Y-m-d"|default:f.hoja }}</td><td>{{ f.expediente|date:"Y-m-d"|default:f.expediente }}</td><td>{% if f.coincide %}<span class="ok-txt">Coincide</span>{% else %}<span class="no-txt">No coincide</span>{% endif %}</td></tr>
           {% endfor %}
-        </table>
+        </table></div>
+        {% if c.coincide_todo %}
         <form method="post" action="{% url 'accion' r.pk 'asociar' %}">{% csrf_token %}
           <input type="hidden" name="paciente_id" value="{{ c.paciente.pk }}">
-          <button class="btn {% if not c.coincide_todo %}btn-gris{% endif %}">Asociar con este expediente</button>
+          <button class="btn" aria-label="Asociar con el expediente {{ c.paciente.folio_expediente }}">Asociar con este expediente</button>
         </form>
+        {% else %}
+        <p class="no-asociable">No se puede asociar: revisa los datos que no coinciden.</p>
+        {% endif %}
       </div>
       {% empty %}<p class="vacio">Ningún expediente coincide con los datos de la hoja.</p>{% endfor %}
     {% endif %}
@@ -82,7 +86,7 @@
     {% endif %}
     {% if notificaciones %}
       <h2>Avisos</h2>
-      <div class="tabla-scroll"><table>
+      <div class="tabla-scroll" role="region" aria-label="Avisos enviados" tabindex="0"><table>
         <thead><tr><th scope="col">Tipo</th><th scope="col">Intento</th><th scope="col">Canal</th><th scope="col">Destino</th><th scope="col">Estado</th><th scope="col">Fecha</th></tr></thead>
         <tbody>{% for a in notificaciones %}<tr><td>{{ a.get_tipo_display }}</td><td>{% if a.tipo == 'aviso' %}{{ a.intento }}{% endif %}</td><td>{{ a.get_canal_display }}</td><td>{{ a.destino }}</td><td>{{ a.get_estado_display }}</td><td>{{ a.creada|date:"d/m/Y H:i" }}</td></tr>{% endfor %}</tbody>
       </table></div>

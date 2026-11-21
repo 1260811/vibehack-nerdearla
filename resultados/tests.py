@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import re
@@ -12,6 +13,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+
+import pymupdf
 
 from . import extractor, servicios
 from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Usuario
@@ -418,6 +421,19 @@ class ExtractorTests(TestCase):
         self.assertEqual(valores, {"hoja_nombre": "María López Hernández", "hoja_fecha_nacimiento": "1992-07-02",
                                    "hoja_folio_expediente": "EIRA-0002", "folio_laboratorio": "LAB-24002"})
         self.assertFalse(Resultado.objects.exists())
+
+    def test_paginas_enormes_no_se_rasterizan(self):
+        doc = pymupdf.open()
+        doc.new_page(width=14400, height=14400)
+        with self.assertRaisesMessage(extractor.ExtraccionError, "demasiado grande"):
+            extractor.extraer_datos(io.BytesIO(doc.tobytes()))
+
+    @unittest.skipUnless(extractor.ocr_disponible(), "Tesseract no está instalado")
+    def test_un_encabezado_con_texto_no_impide_leer_el_escaneo(self):
+        escaneo = pymupdf.open(DATOS_DEMO / "pdfs" / "R1_LAB-24001.pdf")
+        escaneo[0].insert_text((40, 20), "LABORATORIO SINTETICO - HOJA DE RESULTADO DE CITOLOGIA CERVICAL", fontsize=8)
+        campos = extractor.extraer_datos(io.BytesIO(escaneo.tobytes()))
+        self.assertEqual(campos["hoja_folio_expediente"]["valor"], "EIRA-0001")
 
     def test_rechaza_archivos_que_no_son_pdf(self):
         respuesta = self.client.post(reverse("extraer_hoja"), {"archivo": SimpleUploadedFile("x.pdf", b"hola")})

@@ -12,6 +12,8 @@ from difflib import SequenceMatcher
 import pymupdf
 
 CONFIANZA_MINIMA = 85
+DPI_OCR = 300
+PIXELES_MAXIMOS = 12_000_000  # una hoja carta a 300 DPI son ~8.4 millones
 ETIQUETAS = {
     "hoja_nombre": "paciente",
     "hoja_fecha_nacimiento": "fecha de nacimiento",
@@ -102,7 +104,11 @@ def extraer_datos(archivo):
                 return campos
             if not ocr_disponible():
                 raise ExtraccionError("La lectura automática no está instalada en este servidor.")
-            png = pagina.get_pixmap(dpi=300, colorspace=pymupdf.csGRAY).tobytes("png")
+            puntos = pagina.rect.width * pagina.rect.height
+            dpi = min(DPI_OCR, int(72 * (PIXELES_MAXIMOS / puntos) ** 0.5)) if puntos > 0 else 0
+            if dpi < 150:
+                raise ExtraccionError("La página es demasiado grande para leerla automáticamente.")
+            png = pagina.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY).tobytes("png")
     except (RuntimeError, ValueError, IndexError) as e:
         raise ExtraccionError("No se pudo abrir el PDF.") from e
     finally:

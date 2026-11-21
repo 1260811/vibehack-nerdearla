@@ -1,0 +1,13 @@
+{% extends "resultados/base.html" %}
+{% block contenido %}
+<h1>Bandeja de avisos simulados</h1>
+<p class="nota">No se envía ningún correo ni SMS real. Así se vería cada mensaje.</p>
+{% for a in avisos %}
+<section class="tarjeta mensaje">
+  <div class="cabecera-mensaje"><span class="canal">{{ a.get_canal_display }}</span> {{ a.get_tipo_display }} · Para: <strong>{{ a.destino }}</strong> · {{ a.creada|date:"d/m/Y H:i" }} · <em>{{ a.get_estado_display }}</em> · intento {{ a.intento }}</div>
+  <p>{{ a.mensaje }}</p>
+  {% if a.enlace_simulado %}<p><a class="btn btn-chico" href="{{ a.enlace_simulado }}" target="_blank" rel="noopener">Abrir como la paciente</a> <span class="nota">Usa una ventana privada para simular su teléfono.</span></p>{% endif %}
+  <p class="nota">Documento {{ a.resultado.folio_laboratorio }} · expediente {{ a.resultado.paciente.folio_expediente }}</p>
+</section>
+{% empty %}<section class="tarjeta"><p class="vacio">Aún no hay avisos.</p></section>{% endfor %}
+{% endblock %}

@@ -1,0 +1,31 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}EIRA · Resultados{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'resultados/estilo.css' %}">
+</head>
+<body class="{% block clase_body %}{% endblock %}">
+<header class="barra">
+  <a class="marca" href="{% url 'inicio' %}">EIRA <span>· Resultados seguros</span></a>
+  {% if user.is_authenticated %}
+  <nav>
+    {% if user.rol == 'laboratorio' %}<a href="{% url 'laboratorio' %}">Cargar resultados</a>{% endif %}
+    {% if user.rol == 'eira' %}<a href="{% url 'panel' %}">Panel</a><a href="{% url 'laboratorio' %}">Cargar</a>{% endif %}
+    {% if user.rol == 'medico' %}<a href="{% url 'medico' %}">Por autorizar</a><a href="{% url 'panel' %}">Panel</a>{% endif %}
+    {% if user.rol == 'eira' or user.rol == 'medico' %}<a href="{% url 'avisos' %}">Avisos simulados</a><a href="{% url 'bitacora' %}">Bitácora</a>{% endif %}
+  </nav>
+  <div class="sesion">
+    <span>{{ user.first_name }} · {{ user.get_rol_display }}</span>
+    <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn-link">Salir</button></form>
+  </div>
+  {% endif %}
+</header>
+<main>
+  {% for m in messages %}<div class="aviso aviso-{{ m.tags }}">{{ m }}</div>{% endfor %}
+  {% block contenido %}{% endblock %}
+</main>
+<footer>Prototipo con datos sintéticos · Las notificaciones son simuladas</footer>
+</body>
+</html>

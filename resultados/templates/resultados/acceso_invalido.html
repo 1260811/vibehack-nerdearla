@@ -1,0 +1,13 @@
+{% extends "resultados/base.html" %}
+{% block titulo %}Enlace no disponible · EIRA{% endblock %}
+{% block clase_body %}portal-paciente{% endblock %}
+{% block contenido %}
+<section class="tarjeta acceso">
+  <h1>Enlace no disponible</h1>
+  {% if bloqueado %}
+  <p>Por seguridad bloqueamos este enlace después de varios intentos fallidos. EIRA te contactará para entregarte tu resultado.</p>
+  {% else %}
+  <p>Este enlace no es válido o ya venció. Si esperas un resultado, comunícate con EIRA.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "resultados/base.html" %}
+{% block contenido %}
+<h1>Panel de seguimiento</h1>
+<form method="get" class="en-linea filtro-dia">
+  <label for="dia">Día</label>
+  <input type="date" id="dia" name="dia" value="{{ dia|date:'Y-m-d' }}">
+  {% if ver %}<input type="hidden" name="ver" value="{{ ver }}">{% endif %}
+  <button class="btn btn-chico">Ver día</button>
+  {% if not es_hoy %}<a href="?{% if ver %}ver={{ ver }}{% endif %}">Volver a hoy</a>{% endif %}
+</form>
+<div class="secciones-panel">
+  <section class="tarjeta seccion" aria-labelledby="t-pendientes">
+    <h2 id="t-pendientes">Pendientes</h2>
+    <p class="nota">Necesitan a una persona. Acumulado de todos los días.</p>
+    <div class="tarjetas-estado">
+      {% for k in pendientes %}<a class="kpi {% if ver == k.clave %}activo{% endif %}" href="?dia={{ dia|date:'Y-m-d' }}&ver={{ k.clave }}"><strong>{{ k.n }}</strong>{{ k.etiqueta }}</a>{% endfor %}
+    </div>
+  </section>
+  <section class="tarjeta seccion" aria-labelledby="t-autorizados">
+    <h2 id="t-autorizados">Autorizados {% if es_hoy %}hoy{% else %}el {{ dia|date:"d/m/Y" }}{% endif %}: {{ total_autorizados }}</h2>
+    <p class="nota">El aviso se envía automáticamente al autorizar.</p>
+    <div class="tarjetas-estado">
+      {% for k in autorizados %}<a class="kpi {% if ver == k.clave %}activo{% endif %}" href="?dia={{ dia|date:'Y-m-d' }}&ver={{ k.clave }}"><strong>{{ k.n }}</strong>{{ k.etiqueta }}</a>{% endfor %}
+    </div>
+    <p class="tiempo-promedio">Tiempo promedio de entrega:
+      {% if promedio %}<strong>{{ promedio }}</strong> <span class="nota">(de la carga a la consulta o entrega asistida; {{ n_entregados_dia }} entrega{{ n_entregados_dia|pluralize }} ese día)</span>
+      {% else %}<span class="nota">sin entregas ese día</span>{% endif %}
+    </p>
+  </section>
+</div>
+{% if contacto %}
+<section class="tarjeta alerta">
+  <h2>Pacientes que requieren contacto</h2>
+  <ul>{% for r in contacto %}<li><a href="{% url 'detalle' r.pk %}">{{ r.paciente.nombre }} · {{ r.paciente.folio_expediente }} · tel. {{ r.paciente.telefono }}</a> — {{ r.get_estado_display }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+<section class="tarjeta" aria-labelledby="t-tabla">
+  <h2 id="t-tabla">{{ titulo }}{% if ver %} <a class="nota" href="?dia={{ dia|date:'Y-m-d' }}">Ver todos</a>{% endif %}</h2>
+  {% include "resultados/_tabla.html" with lista=resultados %}
+</section>
+{% endblock %}

@@ -1,0 +1,23 @@
+[
+  {
+    "correo": "laboratorio@lab.test",
+    "nombre": "Laboratorio Clínico Ficticio",
+    "rol": "laboratorio",
+    "paciente_id": null,
+    "password_demo": "Demo2026!"
+  },
+  {
+    "correo": "admin@eira.test",
+    "nombre": "Lucía Admin (EIRA)",
+    "rol": "eira",
+    "paciente_id": null,
+    "password_demo": "Demo2026!"
+  },
+  {
+    "correo": "medico@eira.test",
+    "nombre": "Dra. Carmen Médica Ficticia",
+    "rol": "medico",
+    "paciente_id": null,
+    "password_demo": "Demo2026!"
+  }
+]

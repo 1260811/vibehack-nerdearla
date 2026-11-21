@@ -1,0 +1,18 @@
+<div class="tabla-scroll">
+<table class="tabla-docs">
+  <thead><tr><th scope="col">Folio lab.</th><th scope="col">Paciente</th><th scope="col">Avance</th><th scope="col">Estado</th><th scope="col">Le toca</th><th scope="col">En esta etapa</th><th scope="col"><span class="sr-only">Acciones</span></th></tr></thead>
+  <tbody>
+  {% for r in lista %}
+  <tr class="{% if r.requiere_contacto %}fila-alerta{% endif %}">
+    <td>{{ r.folio_laboratorio }}</td>
+    <td>{{ r.paciente.nombre|default:r.hoja_nombre }}<br><small class="nota">{{ r.paciente.folio_expediente|default:"Sin expediente" }}</small></td>
+    <td><div class="avance" role="img" aria-label="Avance: {{ r.avance.hechos }} de {{ r.avance.total }} pasos">{% for s in r.avance.segmentos %}<span class="seg seg-{{ s.clase }}" title="{{ s.nombre }}"></span>{% endfor %}</div><small class="nota">{{ r.avance.hechos }}/{{ r.avance.total }}</small></td>
+    <td>{% include "resultados/_estado.html" %}{% if r.requiere_contacto %} <span class="etiqueta-alerta">Requiere contacto</span>{% endif %}</td>
+    <td class="le-toca">{% if r.completado %}<strong class="completado">Completado</strong>{% else %}<strong>{{ r.le_toca.0 }}</strong><small class="nota">{{ r.le_toca.1 }}</small>{% endif %}</td>
+    <td>{% if r.completado %}{% if r.tiempo_entrega %}<small class="nota">Entregado en</small> {{ r.tiempo_entrega }}{% else %}—{% endif %}{% else %}{{ r.tiempo_en_etapa }}{% endif %}</td>
+    <td><a class="btn btn-chico" href="{% url 'detalle' r.pk %}" aria-label="Abrir {{ r.folio_laboratorio }}">Abrir</a></td>
+  </tr>
+  {% empty %}<tr><td colspan="7" class="vacio">No hay documentos.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>

@@ -110,6 +110,7 @@ Los fallos esperados (`expectedFailure`) documentan brechas **sin corregir la ap
 una suite verde no significa que estos controles ya existan. Un éxito inesperado exige
 revisar el contrato y retirar la marca si la brecha se resolvió.
 
+- [Propuesta de solución: casos de uso, flujo, contratos y tecnologías](docs/propuesta/README.md).
 - [Flujo Mermaid y matriz de permisos reales](docs/diagrama_flujo.md).
 - [Diagrama renderizado PNG](docs/diagrama_flujo.png).
 - Fuente alternativa reproducible: `dot -Tpng docs/diagrama_flujo.dot -o docs/diagrama_flujo.png` (Graphviz, solo documentación).

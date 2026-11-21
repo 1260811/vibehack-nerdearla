@@ -3,11 +3,19 @@
 <h1>Cargar resultado escaneado</h1>
 <div class="columnas">
   <section class="tarjeta">
-    <form method="post" enctype="multipart/form-data">{% csrf_token %}
-      {{ form.as_p }}
+    <form method="post" enctype="multipart/form-data" id="form-carga" data-extraer="{% url 'extraer_hoja' %}">{% csrf_token %}
+      {{ form.non_field_errors }}
+      {% include "resultados/_campo.html" with campo=form.archivo %}
+      <p id="lectura" class="nota" role="status" aria-live="polite"></p>
+      {% include "resultados/_campo.html" with campo=form.hoja_nombre %}
+      <div class="fila-campos">
+        {% include "resultados/_campo.html" with campo=form.hoja_fecha_nacimiento %}
+        {% include "resultados/_campo.html" with campo=form.hoja_folio_expediente %}
+      </div>
+      {% include "resultados/_campo.html" with campo=form.folio_laboratorio %}
       <button class="btn">Cargar PDF</button>
     </form>
-    <p class="nota">Captura los datos tal como aparecen impresos en la hoja. EIRA los comparará con el expediente.</p>
+    <p class="nota">Al elegir el PDF, el sistema lee los datos impresos y llena el formulario. Compáralos con la hoja y corrige lo necesario antes de cargar: EIRA los volverá a comparar con el expediente.</p>
   </section>
   <section class="tarjeta">
     <h2>Bandeja de entrada</h2>
@@ -27,4 +35,43 @@
     </table>
   </section>
 </div>
+<script>
+(function () {
+  const form = document.getElementById("form-carga");
+  const entrada = form.elements["archivo"];
+  const estado = document.getElementById("lectura");
+  entrada.addEventListener("change", async () => {
+    form.querySelectorAll(".revisar").forEach((aviso) => { aviso.hidden = true; });
+    form.querySelectorAll(".campo-dudoso").forEach((c) => { c.classList.remove("campo-dudoso"); c.removeAttribute("aria-describedby"); });
+    if (!entrada.files.length) { estado.textContent = ""; return; }
+    estado.textContent = "Leyendo los datos de la hoja…";
+    const datos = new FormData();
+    datos.append("archivo", entrada.files[0]);
+    datos.append("csrfmiddlewaretoken", form.elements["csrfmiddlewaretoken"].value);
+    try {
+      const respuesta = await fetch(form.dataset.extraer, { method: "POST", body: datos });
+      const json = await respuesta.json();
+      if (!respuesta.ok) throw new Error(json.error);
+      let dudosos = 0;
+      for (const [nombre, dato] of Object.entries(json.campos)) {
+        const campo = form.elements[nombre];
+        const aviso = document.getElementById("revisar-" + nombre);
+        campo.value = dato.valor;
+        if (dato.revisar) {
+          dudosos += 1;
+          aviso.textContent = dato.valor ? "Revisa este dato: la lectura no es segura." : "No se pudo leer: captúralo de la hoja.";
+          aviso.hidden = false;
+          campo.classList.add("campo-dudoso");
+          campo.setAttribute("aria-describedby", aviso.id);
+        }
+      }
+      estado.textContent = dudosos
+        ? `Datos leídos del PDF. Revisa ${dudosos} campo(s) marcado(s) antes de cargar.`
+        : "Datos leídos del PDF. Compáralos con la hoja antes de cargar.";
+    } catch (error) {
+      estado.textContent = (error.message || "No se pudo leer el PDF.") + " Captura los datos a mano.";
+    }
+  });
+})();
+</script>
 {% endblock %}

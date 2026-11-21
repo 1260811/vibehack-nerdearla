@@ -61,6 +61,10 @@ details.devolver { margin-top:1rem; } details summary { cursor:pointer; color:va
 .portal-paciente main { max-width:760px; }
 .resultado-paciente { display:flex; flex-direction:column; gap:.4rem; text-decoration:none; color:inherit; }
 .resultado-paciente .btn { align-self:flex-start; margin-top:.4rem; }
+.fila-campos { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap:0 1rem; }
+.revisar { display:block; margin-top:.25rem; color:#92400e; font-size:.85rem; font-weight:600; }
+.campo-dudoso { border:2px solid #b45309 !important; background:#fffbeb; }
+.error-campo { display:block; color:var(--rojo); font-size:.85rem; }
 .ok-txt { color:var(--verde); font-weight:600; } .no-txt { color:var(--rojo); font-weight:600; }
 
 .secciones-panel { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap:1rem; }

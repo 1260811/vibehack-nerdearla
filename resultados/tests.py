@@ -1,8 +1,10 @@
+import io
 import json
 import os
 import re
 import shutil
 import tempfile
+import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -12,10 +14,13 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from . import servicios
+import pymupdf
+
+from . import extractor, servicios
 from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Usuario
 
 MEDIA_TEMPORAL = tempfile.mkdtemp()
+DATOS_DEMO = Path(__file__).resolve().parent.parent / "datos_demo"
 
 
 def ultimo_codigo(resultado):
@@ -383,3 +388,66 @@ class BandejaYPanelTests(TestCase):
         self.assertEqual(len(cargados), 4)
         self.assertIn("Error inesperado", dict(rechazados)["R1_LAB-24001.pdf"])
         self.assertTrue((self.carpeta / "rechazados" / "R1_LAB-24001.json").exists())
+
+
+class ExtractorTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("cargar_demo", verbosity=0)
+
+    def setUp(self):
+        self.client.force_login(Usuario.objects.get(username="laboratorio@lab.test"))
+
+    def test_interpreta_etiquetas_con_errores_de_lectura_y_descarta_datos_invalidos(self):
+        lineas = [
+            [("Paciente:", 95), ("María", 96), ("López", 94)],
+            [("Pecha", 60), ("de", 90), ("nacimiento.", 70), ("1149-01-30", 50)],
+            [("Folio", 90), ("de", 90), ("expediente:", 90), ("EIRA-0001", 70)],
+            [("Folio", 90), ("de", 90), ("laboratorio:", 90), ("LAB-24001", 95)],
+        ]
+        campos = extractor.interpretar(lineas)
+        self.assertEqual(campos["hoja_nombre"], {"valor": "María López", "confianza": 95, "revisar": False})
+        self.assertEqual(campos["hoja_fecha_nacimiento"]["valor"], "")
+        self.assertTrue(campos["hoja_fecha_nacimiento"]["revisar"])
+        self.assertEqual(campos["hoja_folio_expediente"], {"valor": "EIRA-0001", "confianza": 70, "revisar": True})
+        self.assertEqual(campos["folio_laboratorio"]["valor"], "LAB-24001")
+
+    @unittest.skipUnless(extractor.ocr_disponible(), "Tesseract no está instalado")
+    def test_lee_los_datos_del_pdf_escaneado_sin_guardarlo(self):
+        pdf = (DATOS_DEMO / "pdfs" / "R2_LAB-24002.pdf").read_bytes()
+        respuesta = self.client.post(reverse("extraer_hoja"), {"archivo": SimpleUploadedFile("r2.pdf", pdf)})
+        self.assertEqual(respuesta.status_code, 200)
+        valores = {k: v["valor"] for k, v in respuesta.json()["campos"].items()}
+        self.assertEqual(valores, {"hoja_nombre": "María López Hernández", "hoja_fecha_nacimiento": "1992-07-02",
+                                   "hoja_folio_expediente": "EIRA-0002", "folio_laboratorio": "LAB-24002"})
+        self.assertFalse(Resultado.objects.exists())
+
+    def test_paginas_enormes_no_se_rasterizan(self):
+        doc = pymupdf.open()
+        doc.new_page(width=14400, height=14400)
+        with self.assertRaisesMessage(extractor.ExtraccionError, "demasiado grande"):
+            extractor.extraer_datos(io.BytesIO(doc.tobytes()))
+
+    @unittest.skipUnless(extractor.ocr_disponible(), "Tesseract no está instalado")
+    def test_un_encabezado_con_texto_no_impide_leer_el_escaneo(self):
+        escaneo = pymupdf.open(DATOS_DEMO / "pdfs" / "R1_LAB-24001.pdf")
+        escaneo[0].insert_text((40, 20), "LABORATORIO SINTETICO - HOJA DE RESULTADO DE CITOLOGIA CERVICAL", fontsize=8)
+        campos = extractor.extraer_datos(io.BytesIO(escaneo.tobytes()))
+        self.assertEqual(campos["hoja_folio_expediente"]["valor"], "EIRA-0001")
+
+    def test_rechaza_archivos_que_no_son_pdf(self):
+        respuesta = self.client.post(reverse("extraer_hoja"), {"archivo": SimpleUploadedFile("x.pdf", b"hola")})
+        self.assertEqual(respuesta.status_code, 400)
+
+    def test_solo_laboratorio_y_eira_pueden_usarlo(self):
+        self.client.force_login(Usuario.objects.get(username="medico@eira.test"))
+        self.assertEqual(self.client.post(reverse("extraer_hoja")).status_code, 403)
+        self.client.logout()
+        self.assertEqual(self.client.post(reverse("extraer_hoja")).status_code, 302)
+
+    def test_fecha_y_folio_de_expediente_van_en_la_misma_fila(self):
+        html = self.client.get(reverse("laboratorio")).content.decode()
+        fila = html[html.index('class="fila-campos"'):]
+        fila = fila[:fila.index("</div>")]
+        self.assertIn('name="hoja_fecha_nacimiento"', fila)
+        self.assertIn('name="hoja_folio_expediente"', fila)

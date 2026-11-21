@@ -5,12 +5,12 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.conf import settings
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from . import servicios
+from . import extractor, servicios
 from .forms import CargaForm
 from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol, duracion
 
@@ -58,6 +58,21 @@ def laboratorio(request):
         "form": form, "cargas": cargas,
         "en_bandeja": servicios.pendientes_en_bandeja(), "carpeta_entrada": settings.CARPETA_ENTRADA,
     })
+
+
+@require_POST
+@rol_requerido(Rol.LABORATORIO, Rol.EIRA)
+def extraer_hoja(request):
+    """Propone los datos de la hoja; no guarda el archivo."""
+    archivo = request.FILES.get("archivo")
+    if archivo is None or archivo.size > settings.TAMANO_MAXIMO_PDF or archivo.read(5) != b"%PDF-":
+        return JsonResponse({"error": "Selecciona un PDF válido de hasta 10 MB."}, status=400)
+    archivo.seek(0)
+    try:
+        campos = extractor.extraer_datos(archivo)
+    except extractor.ExtraccionError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+    return JsonResponse({"campos": campos})
 
 
 @require_POST

@@ -1,0 +1,44 @@
+[
+  {
+    "correo": "laboratorio@lab.test",
+    "nombre": "Laboratorio Clínico Ficticio",
+    "rol": "laboratorio",
+    "paciente_id": null,
+    "password_demo": "Demo2026!"
+  },
+  {
+    "correo": "admin@eira.test",
+    "nombre": "Lucía Admin (EIRA)",
+    "rol": "eira",
+    "paciente_id": null,
+    "password_demo": "Demo2026!"
+  },
+  {
+    "correo": "medico@eira.test",
+    "nombre": "Dra. Carmen Médica Ficticia",
+    "rol": "medico",
+    "paciente_id": null,
+    "password_demo": "Demo2026!"
+  },
+  {
+    "correo": "maria.lopez.88@ejemplo.test",
+    "nombre": "María López Hernández",
+    "rol": "paciente",
+    "paciente_id": "P1",
+    "password_demo": "Demo2026!"
+  },
+  {
+    "correo": "maria.lopez.92@ejemplo.test",
+    "nombre": "María López Hernández",
+    "rol": "paciente",
+    "paciente_id": "P2",
+    "password_demo": "Demo2026!"
+  },
+  {
+    "correo": "ana.ramirez@ejemplo.test",
+    "nombre": "Ana Sofía Ramírez Torres",
+    "rol": "paciente",
+    "paciente_id": "P4",
+    "password_demo": "Demo2026!"
+  }
+]

@@ -1,0 +1,114 @@
+{% extends "resultados/base.html" %}
+{% block contenido %}
+<p><a href="{% if es_medico %}{% url 'medico' %}{% else %}{% url 'panel' %}{% endif %}">← Volver</a></p>
+<h1>Resultado {{ r.folio_laboratorio }} {% include "resultados/_estado.html" %}
+  {% if r.requiere_contacto %}<span class="etiqueta-alerta">Requiere contacto</span>{% endif %}</h1>
+
+<ol class="recorrido">
+  <li class="{% if r.estado != 'devuelto' %}hecho{% endif %}">Cargado</li>
+  <li class="{% if r.asociado_por %}hecho{% endif %}">Asociado</li>
+  <li class="{% if r.revisado_por %}hecho{% endif %}">Revisado</li>
+  <li class="{% if r.autorizado_por %}hecho{% endif %}">Autorizado</li>
+  <li class="{% if r.estado == 'notificado' or r.estado == 'consultado' or r.notificaciones.exists %}hecho{% endif %}">Notificado</li>
+  <li class="{% if r.estado == 'consultado' or r.estado == 'entregado_asistido' %}hecho{% endif %}">Entregado</li>
+</ol>
+
+<div class="columnas">
+  <section class="tarjeta">
+    <h2>Datos impresos en la hoja</h2>
+    <dl>
+      <dt>Nombre</dt><dd>{{ r.hoja_nombre }}</dd>
+      <dt>Fecha de nacimiento</dt><dd>{{ r.hoja_fecha_nacimiento|date:"Y-m-d" }}</dd>
+      <dt>Folio de expediente</dt><dd>{{ r.hoja_folio_expediente }}</dd>
+      <dt>Folio de laboratorio</dt><dd>{{ r.folio_laboratorio }}</dd>
+      <dt>Huella SHA-256</dt><dd><code>{{ r.sha256|truncatechars:24 }}</code></dd>
+    </dl>
+    {% if r.paciente %}
+    <h2>Expediente asociado</h2>
+    <dl>
+      <dt>Paciente</dt><dd>{{ r.paciente.nombre }} ({{ r.paciente.folio_expediente }})</dd>
+      <dt>Preferencia de entrega</dt><dd>{{ r.paciente.get_preferencia_entrega_display }}{% if not acceso_digital %} · sin acceso al portal{% endif %}</dd>
+    </dl>
+    {% endif %}
+    {% if r.motivo_devolucion %}<div class="aviso aviso-error">Motivo de devolución: {{ r.motivo_devolucion }}</div>{% endif %}
+    {% if r.entrega_asistida_detalle %}<div class="aviso aviso-success">{{ r.entrega_asistida_detalle }}</div>{% endif %}
+
+    {# ---------- Acciones según estado y rol ---------- #}
+    {% if es_eira and r.estado == 'cargado' %}
+      <h2>Asociar con expediente</h2>
+      <p class="nota">Solo se puede asociar si coinciden nombre, fecha de nacimiento y folio.</p>
+      {% for c in candidatos %}
+      <div class="candidato {% if c.coincide_todo %}ok{% else %}no{% endif %}">
+        <strong>{{ c.paciente.nombre }} · {{ c.paciente.folio_expediente }}</strong>
+        <table>
+          <tr><th>Dato</th><th>En la hoja</th><th>En el expediente</th><th></th></tr>
+          {% for f in c.comparacion %}
+          <tr><td>{{ f.campo }}</td><td>{{ f.hoja|date:"Y-m-d"|default:f.hoja }}</td><td>{{ f.expediente|date:"Y-m-d"|default:f.expediente }}</td><td>{% if f.coincide %}<span class="ok-txt">Coincide</span>{% else %}<span class="no-txt">No coincide</span>{% endif %}</td></tr>
+          {% endfor %}
+        </table>
+        <form method="post" action="{% url 'accion' r.pk 'asociar' %}">{% csrf_token %}
+          <input type="hidden" name="paciente_id" value="{{ c.paciente.pk }}">
+          <button class="btn {% if not c.coincide_todo %}btn-gris{% endif %}">Asociar con este expediente</button>
+        </form>
+      </div>
+      {% empty %}<p class="vacio">Ningún expediente coincide con los datos de la hoja.</p>{% endfor %}
+    {% endif %}
+
+    {% if es_eira and r.estado == 'asociado' %}
+      <h2>Revisión administrativa</h2>
+      <p class="nota">Confirma que el documento es legible y corresponde a la paciente.</p>
+      <form method="post" action="{% url 'accion' r.pk 'aprobar' %}">{% csrf_token %}<button class="btn">Aprobar revisión</button></form>
+    {% endif %}
+
+    {% if es_medico and r.estado == 'revisado' %}
+      <h2>Autorización clínica</h2>
+      <form method="post" action="{% url 'accion' r.pk 'autorizar' %}">{% csrf_token %}
+        <label class="check"><input type="checkbox" name="requiere_contacto"> Requiere contacto con la paciente antes o después de la entrega</label>
+        <button class="btn">Autorizar entrega</button>
+      </form>
+    {% endif %}
+
+    {% if es_eira and r.estado == 'cargado' or es_eira and r.estado == 'asociado' or es_medico and r.estado == 'revisado' %}
+      <details class="devolver"><summary>Devolver documento</summary>
+        <form method="post" action="{% url 'accion' r.pk 'devolver' %}">{% csrf_token %}
+          <label>Motivo <textarea name="motivo" rows="2" required placeholder="Ej. escaneo ilegible, datos no coinciden"></textarea></label>
+          <button class="btn btn-peligro">Devolver</button>
+        </form>
+      </details>
+    {% endif %}
+
+    {% if es_eira and r.estado == 'autorizado' %}
+      <h2>Entrega</h2>
+      {% if acceso_digital %}
+      <form method="post" action="{% url 'accion' r.pk 'notificar' %}" class="en-linea">{% csrf_token %}
+        <select name="canal"><option value="correo">Correo</option><option value="sms">SMS</option></select>
+        <button class="btn">Enviar aviso simulado</button>
+      </form>
+      {% else %}<p class="nota">La paciente no tiene acceso al portal: usa la entrega asistida.</p>{% endif %}
+    {% endif %}
+
+    {% if es_eira and r.estado == 'autorizado' or es_eira and r.estado == 'notificado' %}
+      <details class="devolver" {% if not acceso_digital %}open{% endif %}><summary>Registrar entrega asistida</summary>
+        <form method="post" action="{% url 'accion' r.pk 'entrega' %}">{% csrf_token %}
+          <label>¿Quién recibió? <input name="receptor" required placeholder="Ej. la paciente en recepción"></label>
+          <label>¿Cómo se verificó la identidad? <input name="verificacion" required placeholder="Ej. INE + fecha de nacimiento"></label>
+          <button class="btn">Registrar entrega</button>
+        </form>
+      </details>
+    {% endif %}
+  </section>
+
+  <section class="tarjeta">
+    <h2>Documento</h2>
+    <iframe class="visor" src="{% url 'documento' r.pk %}#navpanes=0&view=FitH" title="PDF del resultado"></iframe>
+    <h2>Bitácora de este documento</h2>
+    <ul class="linea-tiempo">
+      {% for e in eventos %}
+      <li><time>{{ e.fecha|date:"d/m H:i:s" }}</time> <strong>{{ e.accion }}</strong> · {{ e.usuario.first_name|default:"sistema" }}
+        {% if e.estado_nuevo %}<span class="nota">({{ e.etiqueta_anterior }} → {{ e.etiqueta_nueva }})</span>{% endif %}
+        {% if e.detalle %}<div class="nota">{{ e.detalle }}</div>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

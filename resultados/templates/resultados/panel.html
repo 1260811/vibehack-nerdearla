@@ -1,0 +1,19 @@
+{% extends "resultados/base.html" %}
+{% block contenido %}
+<h1>Panel de seguimiento</h1>
+<div class="tarjetas-estado">
+  <a class="kpi {% if not filtro %}activo{% endif %}" href="{% url 'panel' %}"><strong>{{ resultados|length }}</strong>{% if filtro %}Ver todos{% else %}Todos{% endif %}</a>
+  {% for t in tarjetas %}
+  <a class="kpi kpi-{{ t.estado.value }} {% if filtro == t.estado.value %}activo{% endif %}" href="?estado={{ t.estado.value }}"><strong>{{ t.n }}</strong>{{ t.estado.label }}</a>
+  {% endfor %}
+</div>
+{% if contacto %}
+<section class="tarjeta alerta">
+  <h2>Pacientes que requieren contacto</h2>
+  <ul>{% for r in contacto %}<li><a href="{% url 'detalle' r.pk %}">{{ r.paciente.nombre }} · {{ r.paciente.folio_expediente }} · tel. {{ r.paciente.telefono }}</a> — {{ r.get_estado_display }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+<section class="tarjeta">
+  {% include "resultados/_tabla.html" with lista=resultados %}
+</section>
+{% endblock %}

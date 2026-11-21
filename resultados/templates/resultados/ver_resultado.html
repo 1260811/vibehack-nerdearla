@@ -1,0 +1,9 @@
+{% extends "resultados/base.html" %}
+{% block clase_body %}portal-paciente{% endblock %}
+{% block contenido %}
+<p><a href="{% url 'mis_resultados' %}">← Mis resultados</a></p>
+<h1>Resultado {{ r.folio_laboratorio }}</h1>
+{% if r.requiere_contacto %}<div class="aviso aviso-warning">Tu médico pidió conversar contigo sobre este resultado. EIRA te contactará.</div>{% endif %}
+<p><a class="btn" href="{% url 'descargar' r.pk %}">Descargar PDF</a></p>
+<iframe class="visor" src="{% url 'documento' r.pk %}#navpanes=0&view=FitH" title="PDF del resultado"></iframe>
+{% endblock %}

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "P1",
+    "nombre": "María López Hernández",
+    "fecha_nacimiento": "1988-03-14",
+    "folio_expediente": "EIRA-0001",
+    "correo": "maria.lopez.88@ejemplo.test",
+    "telefono": "+52 55 5550 0101",
+    "preferencia_entrega": "digital"
+  },
+  {
+    "id": "P2",
+    "nombre": "María López Hernández",
+    "fecha_nacimiento": "1992-07-02",
+    "folio_expediente": "EIRA-0002",
+    "correo": "maria.lopez.92@ejemplo.test",
+    "telefono": "+52 55 5550 0102",
+    "preferencia_entrega": "digital"
+  },
+  {
+    "id": "P3",
+    "nombre": "Rosa Elena Martínez Cruz",
+    "fecha_nacimiento": "1975-11-23",
+    "folio_expediente": "EIRA-0003",
+    "correo": null,
+    "telefono": "+52 55 5550 0103",
+    "preferencia_entrega": "asistida"
+  },
+  {
+    "id": "P4",
+    "nombre": "Ana Sofía Ramírez Torres",
+    "fecha_nacimiento": "1999-01-30",
+    "folio_expediente": "EIRA-0004",
+    "correo": "ana.ramirez@ejemplo.test",
+    "telefono": "+52 55 5550 0104",
+    "preferencia_entrega": "digital"
+  }
+]

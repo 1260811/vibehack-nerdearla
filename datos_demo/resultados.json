@@ -1,0 +1,82 @@
+[
+  {
+    "id": "R1",
+    "archivo": "R1_LAB-24001.pdf",
+    "escenario": "Flujo feliz: coincide con P1, resultado normal",
+    "hoja": {
+      "nombre": "María López Hernández",
+      "fecha_nacimiento": "1988-03-14",
+      "folio_expediente": "EIRA-0001",
+      "folio_laboratorio": "LAB-24001"
+    },
+    "interpretacion": "Negativo para lesión intraepitelial o malignidad (NILM)",
+    "paciente_esperada": "P1",
+    "requiere_contacto_sugerido": false,
+    "calidad": "buena",
+    "sha256": "91cf7eb0848350bd35024b501d121bbb5ed8e1ea891f23832ca4655e1837969a"
+  },
+  {
+    "id": "R2",
+    "archivo": "R2_LAB-24002.pdf",
+    "escenario": "Homónima: mismo nombre que P1, solo coincide con P2 por fecha y folio; resultado anormal",
+    "hoja": {
+      "nombre": "María López Hernández",
+      "fecha_nacimiento": "1992-07-02",
+      "folio_expediente": "EIRA-0002",
+      "folio_laboratorio": "LAB-24002"
+    },
+    "interpretacion": "Lesión intraepitelial escamosa de bajo grado (LSIL)",
+    "paciente_esperada": "P2",
+    "requiere_contacto_sugerido": true,
+    "calidad": "buena",
+    "sha256": "85c11302230488424f40ebbf95ccc1d4a2ca8ab56b49288c502d57b18c5898e5"
+  },
+  {
+    "id": "R3",
+    "archivo": "R3_LAB-24003.pdf",
+    "escenario": "Entrega asistida: P3 no tiene correo ni usuario",
+    "hoja": {
+      "nombre": "Rosa Elena Martínez Cruz",
+      "fecha_nacimiento": "1975-11-23",
+      "folio_expediente": "EIRA-0003",
+      "folio_laboratorio": "LAB-24003"
+    },
+    "interpretacion": "Negativo para lesión intraepitelial o malignidad (NILM)",
+    "paciente_esperada": "P3",
+    "requiere_contacto_sugerido": false,
+    "calidad": "buena",
+    "sha256": "a278e9ef613f906cefbe983421c88c9cdf86a8528e476e7a54106f8abbaccd1f"
+  },
+  {
+    "id": "R4",
+    "archivo": "R4_LAB-24004.pdf",
+    "escenario": "Datos no coinciden: nombre de P4 pero fecha y folio distintos; la asociación debe bloquearse",
+    "hoja": {
+      "nombre": "Ana Sofía Ramírez Torres",
+      "fecha_nacimiento": "1999-03-01",
+      "folio_expediente": "EIRA-0044",
+      "folio_laboratorio": "LAB-24004"
+    },
+    "interpretacion": "Negativo para lesión intraepitelial o malignidad (NILM)",
+    "paciente_esperada": null,
+    "requiere_contacto_sugerido": false,
+    "calidad": "buena",
+    "sha256": "baf6edc3e03cf0d07fe7c0c849d30f4efa942e4f8cd4aa14156da9c57a6b72dc"
+  },
+  {
+    "id": "R5",
+    "archivo": "R5_LAB-24005.pdf",
+    "escenario": "Escaneo ilegible: coincide con P4 pero EIRA debe devolverlo en revisión",
+    "hoja": {
+      "nombre": "Ana Sofía Ramírez Torres",
+      "fecha_nacimiento": "1999-01-30",
+      "folio_expediente": "EIRA-0004",
+      "folio_laboratorio": "LAB-24005"
+    },
+    "interpretacion": "Negativo para lesión intraepitelial o malignidad (NILM)",
+    "paciente_esperada": "P4",
+    "requiere_contacto_sugerido": false,
+    "calidad": "ilegible",
+    "sha256": "38ae46c391a297c727c8ea3c69c3fad542078e112d6c4e49619119b9ae9ad891"
+  }
+]

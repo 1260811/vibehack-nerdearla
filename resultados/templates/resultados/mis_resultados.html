@@ -1,0 +1,16 @@
+{% extends "resultados/base.html" %}
+{% block clase_body %}portal-paciente{% endblock %}
+{% block contenido %}
+<h1>Hola, {{ user.first_name }}</h1>
+<p>Aquí puedes consultar tus resultados autorizados por tu médico.</p>
+{% for r in resultados %}
+<a class="tarjeta resultado-paciente" href="{% url 'ver_resultado' r.pk %}">
+  <strong>Resultado de Papanicolaou</strong>
+  <span>Folio {{ r.folio_laboratorio }} · disponible desde {{ r.actualizado|date:"d/m/Y" }}</span>
+  {% if r.requiere_contacto %}<span class="etiqueta-alerta">Tu clínica se pondrá en contacto contigo</span>{% endif %}
+  <span class="btn">Ver documento</span>
+</a>
+{% empty %}
+<section class="tarjeta"><p class="vacio">Todavía no tienes resultados disponibles. Te avisaremos cuando estén listos.</p></section>
+{% endfor %}
+{% endblock %}

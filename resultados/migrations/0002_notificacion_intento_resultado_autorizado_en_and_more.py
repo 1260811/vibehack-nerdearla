@@ -4,6 +4,45 @@ import django.utils.timezone
 from django.db import migrations, models
 
 
+MENSAJE_AVISO = (
+    "Hola {nombre}: tienes un documento disponible en el portal de EIRA. "
+    "Inicia sesión con tu usuario para consultarlo. "
+    "Por tu seguridad, este mensaje no contiene información clínica."
+)
+
+
+def _enmascarar(destino):
+    if "@" in destino:
+        usuario, dominio = destino.split("@", 1)
+        return f"{usuario[:1]}***@{dominio}"
+    return "*" * max(len(destino) - 4, 0) + destino[-4:]
+
+
+def _avisar_autorizados(apps):
+    """Antes el aviso era manual: los autorizados sin aviso reciben ahora el aviso automático."""
+    Notificacion = apps.get_model("resultados", "Notificacion")
+    Resultado = apps.get_model("resultados", "Resultado")
+    EventoBitacora = apps.get_model("resultados", "EventoBitacora")
+    Usuario = apps.get_model("resultados", "Usuario")
+    ahora = django.utils.timezone.now()
+    for r in Resultado.objects.filter(estado="autorizado").select_related("paciente"):
+        p = r.paciente
+        canal, destino = next(((c, d) for c, d in [("correo", p.correo), ("sms", p.telefono)] if d), (None, None))
+        if canal is None or not Usuario.objects.filter(paciente=p, is_active=True).exists():
+            r.requiere_entrega_asistida = True
+            r.save(update_fields=["requiere_entrega_asistida"])
+            EventoBitacora.objects.create(resultado=r, accion="Requiere entrega asistida",
+                                          detalle="La paciente no tiene acceso al portal.")
+            continue
+        Notificacion.objects.create(resultado=r, canal=canal, destino=destino, intento=1,
+                                    mensaje=MENSAJE_AVISO.format(nombre=p.nombre.split()[0]))
+        r.estado, r.etapa_desde = "notificado", ahora
+        r.save(update_fields=["estado", "etapa_desde"])
+        EventoBitacora.objects.create(
+            resultado=r, accion=f"Aviso automático por {'correo' if canal == 'correo' else 'sms'}",
+            estado_anterior="autorizado", estado_nuevo="notificado", detalle=f"Destino: {_enmascarar(destino)}")
+
+
 def migrar_datos(apps, schema_editor):
     Notificacion = apps.get_model("resultados", "Notificacion")
     Resultado = apps.get_model("resultados", "Resultado")
@@ -18,6 +57,7 @@ def migrar_datos(apps, schema_editor):
         r.autorizado_en = autorizado.fecha if autorizado else None
         r.entregado_en = entregado.fecha if entregado else None
         r.save(update_fields=["etapa_desde", "autorizado_en", "entregado_en"])
+    _avisar_autorizados(apps)
 
 
 class Migration(migrations.Migration):

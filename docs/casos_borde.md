@@ -6,7 +6,7 @@ Generado con `python3 manage.py probar_flujo` sobre una base aislada de pruebas.
 Los contratos de funciones/campos ausentes comprueban ausencia, no simulan una implementación.
 No se probaron proveedores reales, OCR, conectividad ni despliegue productivo.
 
-Escenarios: 29. Brechas esperadas: 11. Fallos inesperados: 0.
+Escenarios: 30. Brechas esperadas: 11. Fallos inesperados: 0.
 
 | Escenario | Actor | Esperado | Obtenido | Estado | Riesgo/recomendación |
 |---|---|---|---|---|---|
@@ -20,6 +20,7 @@ Escenarios: 29. Brechas esperadas: 11. Fallos inesperados: 0.
 | cargador con cambio de rol puede autorizar | Médico | Impedir que la identidad cargadora autorice clínicamente. | Brecha reproducida: cargador con cambio de rol puede autorizar. | ❌ | separar carga y autorización. |
 | no existe versión/revocación ni reaviso | EIRA | Ofrecer corrección versionada, reaviso y revocación de la versión anterior. | Brecha reproducida: no existe versión/revocación ni reaviso. | ❌ | impedir acceso a versión anterior. |
 | saltos de estado denegados no dejan evento | Médico | Registrar un evento incluso cuando se rechaza una transición. | Brecha reproducida: saltos de estado denegados no dejan evento. | ❌ | auditar todos los rechazos. |
+| un folio devuelto admite una nueva carga, pero solo una. | Laboratorio | un folio devuelto admite una nueva carga, pero solo una. | Contrato satisfecho en la aplicación real. | ✅ | Mantener esta protección y su prueba. |
 | carga manual rechaza un folio ya cargado, igual que la bandeja. | Laboratorio | Rechazar una segunda carga del mismo documento/folio. | Contrato satisfecho en la aplicación real. | ✅ | Mantener esta protección y su prueba. |
 | tras verificar, el PDF se puede volver a descargar mientras dure la sesión (30 min). | Paciente | Limitar la descarga a un solo uso tras verificar la identidad. | Brecha reproducida: tras verificar, el PDF se puede volver a descargar mientras dure la sesión (30 min).. | ❌ | Mantener esta protección y su prueba. |
 | el respaldo correo→SMS→asistida es simulado | Sistema | Ofrecer respaldo ante falla de correo, después SMS y finalmente asistencia. | Brecha reproducida: el respaldo correo→SMS→asistida es simulado. | ❌ | falta proveedor real que reporte fallas. |

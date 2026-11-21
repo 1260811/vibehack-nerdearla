@@ -123,6 +123,14 @@ class EscenariosFlujo(TestCase):
         self.assertContains(respuesta, "ya fue cargado")
         self.assertEqual(Resultado.objects.filter(folio_laboratorio="L-1").count(), 1)
 
+    def test_devuelto_se_vuelve_a_cargar(self):
+        """Laboratorio: un folio devuelto admite una nueva carga, pero solo una."""
+        s.devolver(self.r, self.eira, "Escaneo ilegible")
+        nuevo = self.cargar()
+        self.assertEqual((nuevo.folio_laboratorio, nuevo.estado), ("L-1", Estado.CARGADO))
+        with self.assertRaisesMessage(s.ReglaNegocioError, "ya fue cargado"):
+            self.cargar()
+
     def test_salto_estado(self):
         """Médico: no puede autorizar desde cargado."""
         with self.assertRaises(s.ReglaNegocioError):

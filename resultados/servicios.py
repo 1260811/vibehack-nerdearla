@@ -113,7 +113,8 @@ def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_
     if usuario.rol not in {Rol.LABORATORIO, Rol.EIRA}:
         raise ReglaNegocioError("Tu rol no puede cargar documentos.")
     folio_laboratorio = folio_laboratorio.strip().upper()
-    if Resultado.objects.filter(folio_laboratorio=folio_laboratorio).exists():
+    # Un folio devuelto puede cargarse de nuevo; mientras siga activo, no se repite.
+    if Resultado.objects.filter(folio_laboratorio=folio_laboratorio).exclude(estado=Estado.DEVUELTO).exists():
         raise ReglaNegocioError(f"El folio de laboratorio {folio_laboratorio} ya fue cargado.")
     if archivo.size > settings.TAMANO_MAXIMO_PDF:
         raise ReglaNegocioError("El archivo supera el tamaño máximo de 10 MB.")

@@ -49,7 +49,7 @@
         {% if c.coincide_todo %}
         <form method="post" action="{% url 'accion' r.pk 'asociar' %}">{% csrf_token %}
           <input type="hidden" name="paciente_id" value="{{ c.paciente.pk }}">
-          <button class="btn" aria-label="Asociar con el expediente {{ c.paciente.folio_expediente }}">Asociar con este expediente</button>
+          <button class="btn" aria-label="Asociar con este expediente ({{ c.paciente.folio_expediente }})">Asociar con este expediente</button>
         </form>
         {% else %}
         <p class="no-asociable">No se puede asociar: revisa los datos que no coinciden.</p>

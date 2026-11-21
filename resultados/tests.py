@@ -131,12 +131,12 @@ class FlujoTests(TestCase):
         servicios.simular_fallo_aviso(r, self.eira)
         reintento = servicios.reintentar_aviso(r, self.eira)
         self.assertEqual((reintento.intento, reintento.canal), (2, Notificacion.Canal.SMS))
-        r = self.resultado("LAB-24001")
+        self.assertEqual(r.le_toca, ("Paciente", "Consultar el documento"))
         servicios.simular_fallo_aviso(r, self.eira)
-        r.refresh_from_db()
         self.assertTrue(r.requiere_entrega_asistida)
         with self.assertRaises(servicios.ReglaNegocioError):
-            servicios.reintentar_aviso(self.resultado("LAB-24001"), self.eira)
+            servicios.reintentar_aviso(r, self.eira)
+        self.assertEqual(r.notificaciones.count(), 2)
         self.assertEqual(r.le_toca, ("EIRA", "Entrega asistida"))
 
     def test_panel_por_secciones_y_dia(self):

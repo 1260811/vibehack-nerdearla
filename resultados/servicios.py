@@ -204,7 +204,13 @@ def _canal_disponible(paciente, excluir=None):
     return disponibles[0] if disponibles else (None, None)
 
 
+def _olvidar_aviso_en_cache(resultado):
+    for atributo in ("ultimo_aviso", "avance", "le_toca"):
+        resultado.__dict__.pop(atributo, None)
+
+
 def _crear_aviso(resultado, canal, destino, intento):
+    _olvidar_aviso_en_cache(resultado)
     return Notificacion.objects.create(
         resultado=resultado, canal=canal, destino=destino, intento=intento,
         mensaje=MENSAJE_AVISO.format(nombre=resultado.paciente.nombre.split()[0]),
@@ -247,6 +253,7 @@ def simular_fallo_aviso(resultado, usuario):
     aviso = _aviso_pendiente(resultado, usuario, Notificacion.Estado.ENVIADA, "No hay un aviso enviado que pueda fallar.")
     aviso.estado = Notificacion.Estado.FALLIDA
     aviso.save(update_fields=["estado"])
+    _olvidar_aviso_en_cache(resultado)
     registrar(usuario, "Fallo de entrega del aviso (simulado)", resultado,
               detalle=f"Intento {aviso.intento} por {aviso.get_canal_display().lower()}.")
     fallos = resultado.notificaciones.filter(estado=Notificacion.Estado.FALLIDA).count()

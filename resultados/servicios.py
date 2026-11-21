@@ -112,6 +112,10 @@ def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_
                      origen="Carga manual"):
     if usuario.rol not in {Rol.LABORATORIO, Rol.EIRA}:
         raise ReglaNegocioError("Tu rol no puede cargar documentos.")
+    folio_laboratorio = folio_laboratorio.strip().upper()
+    # Un folio devuelto puede cargarse de nuevo; mientras siga activo, no se repite.
+    if Resultado.objects.filter(folio_laboratorio=folio_laboratorio).exclude(estado=Estado.DEVUELTO).exists():
+        raise ReglaNegocioError(f"El folio de laboratorio {folio_laboratorio} ya fue cargado.")
     if archivo.size > settings.TAMANO_MAXIMO_PDF:
         raise ReglaNegocioError("El archivo supera el tamaño máximo de 10 MB.")
     archivo.seek(0)
@@ -123,7 +127,7 @@ def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_
         hoja_nombre=hoja_nombre.strip(),
         hoja_fecha_nacimiento=hoja_fecha_nacimiento,
         hoja_folio_expediente=hoja_folio_expediente.strip().upper(),
-        folio_laboratorio=folio_laboratorio.strip().upper(),
+        folio_laboratorio=folio_laboratorio,
         cargado_por=usuario,
     )
     resultado.archivo.save("resultado.pdf", archivo, save=False)
@@ -204,14 +208,11 @@ def importar_bandeja(usuario, carpeta=None):
                 raise ReglaNegocioError(f"{datos_json.name} no es válido (JSON con fecha AAAA-MM-DD).")
             if faltan:
                 raise ReglaNegocioError(f"En {datos_json.name} faltan: {', '.join(faltan)}.")
-            folio = hoja["folio_laboratorio"].strip().upper()
-            if Resultado.objects.filter(folio_laboratorio=folio).exists():
-                raise ReglaNegocioError(f"El folio de laboratorio {folio} ya fue cargado.")
             with open(pdf, "rb") as f:
                 resultado = cargar_resultado(
                     usuario, File(f, name=pdf.name),
                     hoja_nombre=hoja["nombre"], hoja_fecha_nacimiento=fecha,
-                    hoja_folio_expediente=hoja["folio_expediente"], folio_laboratorio=folio,
+                    hoja_folio_expediente=hoja["folio_expediente"], folio_laboratorio=hoja["folio_laboratorio"],
                     origen=f"Bandeja de entrada ({pdf.name})",
                 )
         except Exception as e:

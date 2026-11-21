@@ -59,6 +59,17 @@ class FlujoTests(TestCase):
         self.assertEqual(acciones[0], "Carga de PDF")
         self.assertEqual(acciones[-1], "Consulta por la paciente")
 
+    def test_consulta_simultanea_no_falla(self):
+        r = self.resultado("LAB-24001")
+        self.llevar_a_autorizado(r, self.p1)
+        servicios.notificar(r, self.eira, Notificacion.Canal.CORREO)
+        paciente = r.paciente.usuario
+        copia_vieja = Resultado.objects.get(pk=r.pk)
+        servicios.registrar_acceso(paciente, r)
+        servicios.registrar_acceso(paciente, copia_vieja, descarga=True)
+        self.assertEqual(copia_vieja.estado, Estado.CONSULTADO)
+        self.assertTrue(r.eventos.filter(accion="Descarga del documento").exists())
+
     def test_homonima_solo_se_asocia_con_datos_completos(self):
         r = self.resultado("LAB-24002")
         with self.assertRaises(servicios.ReglaNegocioError):

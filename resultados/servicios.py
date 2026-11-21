@@ -238,6 +238,9 @@ def integridad_correcta(resultado):
 def registrar_acceso(usuario, resultado, descarga=False):
     accion = "Descarga del documento" if descarga else "Visualización del documento"
     if usuario.rol == Rol.PACIENTE and resultado.estado == Estado.NOTIFICADO:
-        _transicionar(resultado, usuario, Estado.CONSULTADO, "Consulta por la paciente", accion)
-    else:
-        registrar(usuario, accion, resultado)
+        try:
+            _transicionar(resultado, usuario, Estado.CONSULTADO, "Consulta por la paciente", accion)
+            return
+        except ReglaNegocioError:
+            resultado.refresh_from_db()
+    registrar(usuario, accion, resultado)

@@ -51,6 +51,9 @@ def _transicionar(resultado, usuario, nuevo, accion, detalle=""):
     if usuario.rol not in roles:
         raise ReglaNegocioError("Tu rol no puede realizar esta acción.")
     anterior = resultado.estado
+    # Actualización condicional: si otra petición ya cambió el estado, no se sobrescribe.
+    if not Resultado.objects.filter(pk=resultado.pk, estado=anterior).update(estado=nuevo):
+        raise ReglaNegocioError("El documento cambió mientras trabajabas en él. Recarga la página.")
     resultado.estado = nuevo
     resultado.save()
     registrar(usuario, accion, resultado, anterior, nuevo, detalle)

@@ -86,6 +86,17 @@ class FlujoTests(TestCase):
         with self.assertRaises(servicios.ReglaNegocioError):
             servicios.aprobar_revision(r, self.lab)
 
+    def test_transicion_con_datos_desactualizados_no_sobrescribe(self):
+        r = self.resultado("LAB-24005")
+        servicios.asociar(r, self.p4, self.eira)
+        copia_vieja = Resultado.objects.get(pk=r.pk)
+        servicios.devolver(r, self.eira, "Escaneo ilegible")
+        with self.assertRaises(servicios.ReglaNegocioError):
+            servicios.aprobar_revision(copia_vieja, self.eira)
+        r.refresh_from_db()
+        self.assertEqual(r.estado, Estado.DEVUELTO)
+        self.assertEqual(r.motivo_devolucion, "Escaneo ilegible")
+
     def test_devolver_exige_motivo(self):
         r = self.resultado("LAB-24005")
         servicios.asociar(r, self.p4, self.eira)

@@ -192,8 +192,8 @@ def documento(request, pk, descarga=False):
     if not servicios.puede_ver_documento(request.user, resultado):
         servicios.registrar(request.user, "Acceso denegado al documento", resultado)
         raise Http404
-    if not servicios.integridad_correcta(resultado):
-        servicios.registrar(request.user, "Integridad fallida", resultado, detalle="El hash del archivo no coincide.")
+    if error := servicios.error_integridad(resultado):
+        servicios.registrar(request.user, "Integridad fallida", resultado, detalle=error)
         return HttpResponse("El documento no pasó la verificación de integridad.", status=409)
     servicios.registrar_acceso(request.user, resultado, descarga=descarga)
     return _respuesta_pdf(resultado, descarga)
@@ -258,8 +258,8 @@ def documento_paciente(request, token, descarga=False):
     if enlace is None or not enlace.vigente or enlace.pk not in request.session.get(SESION_ENLACES, []):
         raise Http404
     resultado = enlace.resultado
-    if not servicios.integridad_correcta(resultado):
-        servicios.registrar(None, "Integridad fallida", resultado, detalle="El hash del archivo no coincide.")
+    if error := servicios.error_integridad(resultado):
+        servicios.registrar(None, "Integridad fallida", resultado, detalle=error)
         return HttpResponse("El documento no pasó la verificación de integridad.", status=409)
     servicios.registrar_acceso(None, resultado, descarga=descarga)
     return _respuesta_pdf(resultado, descarga)

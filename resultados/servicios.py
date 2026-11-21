@@ -1,9 +1,16 @@
 """Reglas de negocio: máquina de estados, verificación de identidad y bitácora."""
 import hashlib
+import json
+import shutil
 import unicodedata
+from datetime import date, timedelta
+from pathlib import Path
 
 from django.conf import settings
+from django.core.files import File
 from django.db import transaction
+from django.db.models import Count
+from django.utils import timezone
 
 from .models import Estado, EventoBitacora, Notificacion, Paciente, Resultado, Rol, Usuario
 
@@ -83,7 +90,8 @@ def enmascarar(destino):
 # ---------- Carga ----------
 
 @transaction.atomic
-def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_folio_expediente, folio_laboratorio):
+def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_folio_expediente, folio_laboratorio,
+                     origen="Carga manual"):
     if usuario.rol not in {Rol.LABORATORIO, Rol.EIRA}:
         raise ReglaNegocioError("Tu rol no puede cargar documentos.")
     if archivo.size > settings.TAMANO_MAXIMO_PDF:
@@ -103,8 +111,69 @@ def cargar_resultado(usuario, archivo, hoja_nombre, hoja_fecha_nacimiento, hoja_
     resultado.archivo.save("resultado.pdf", archivo, save=False)
     resultado.save()
     registrar(usuario, "Carga de PDF", resultado, "", Estado.CARGADO,
-              f"Folio de laboratorio {resultado.folio_laboratorio} · SHA-256 {sha[:16]}…")
+              f"{origen} · Folio de laboratorio {resultado.folio_laboratorio} · SHA-256 {sha[:16]}…")
     return resultado
+
+
+# ---------- Bandeja de entrada (el laboratorio solo deja archivos en una carpeta) ----------
+
+CAMPOS_HOJA = ("nombre", "fecha_nacimiento", "folio_expediente", "folio_laboratorio")
+
+
+def pendientes_en_bandeja(carpeta=None):
+    carpeta = Path(carpeta or settings.CARPETA_ENTRADA)
+    return sorted(carpeta.glob("*.pdf")) if carpeta.is_dir() else []
+
+
+def _mover(ruta, destino):
+    destino.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(ruta), str(destino / ruta.name))
+
+
+def importar_bandeja(usuario, carpeta=None):
+    """Carga cada PDF de la bandeja con los datos de su archivo .json gemelo.
+
+    Usa las mismas validaciones que la carga manual. Los PDFs cargados pasan a
+    `procesados/`; los rechazados, a `rechazados/` junto con un .txt con el motivo.
+    """
+    carpeta = Path(carpeta or settings.CARPETA_ENTRADA)
+    cargados, rechazados = [], []
+    for pdf in pendientes_en_bandeja(carpeta):
+        datos_json = pdf.with_suffix(".json")
+        try:
+            if not datos_json.exists():
+                raise ReglaNegocioError(f"Falta {datos_json.name} con los datos de la hoja.")
+            try:
+                hoja = json.loads(datos_json.read_text(encoding="utf-8"))
+                faltan = [c for c in CAMPOS_HOJA if not str(hoja.get(c, "")).strip()]
+                fecha = date.fromisoformat(hoja.get("fecha_nacimiento", ""))
+            except (ValueError, AttributeError):
+                raise ReglaNegocioError(f"{datos_json.name} no es válido (JSON con fecha AAAA-MM-DD).")
+            if faltan:
+                raise ReglaNegocioError(f"En {datos_json.name} faltan: {', '.join(faltan)}.")
+            folio = hoja["folio_laboratorio"].strip().upper()
+            if Resultado.objects.filter(folio_laboratorio=folio).exists():
+                raise ReglaNegocioError(f"El folio de laboratorio {folio} ya fue cargado.")
+            with open(pdf, "rb") as f:
+                resultado = cargar_resultado(
+                    usuario, File(f, name=pdf.name),
+                    hoja_nombre=hoja["nombre"], hoja_fecha_nacimiento=fecha,
+                    hoja_folio_expediente=hoja["folio_expediente"], folio_laboratorio=folio,
+                    origen=f"Bandeja de entrada ({pdf.name})",
+                )
+        except ReglaNegocioError as e:
+            motivo = str(e)
+            registrar(usuario, "Importación rechazada", detalle=f"{pdf.name}: {motivo}")
+            _mover(pdf, carpeta / "rechazados")
+            if datos_json.exists():
+                _mover(datos_json, carpeta / "rechazados")
+            (carpeta / "rechazados" / f"{pdf.stem}.motivo.txt").write_text(motivo + "\n", encoding="utf-8")
+            rechazados.append((pdf.name, motivo))
+        else:
+            _mover(pdf, carpeta / "procesados")
+            _mover(datos_json, carpeta / "procesados")
+            cargados.append(resultado)
+    return cargados, rechazados
 
 
 # ---------- Asociación con verificación de identidad ----------
@@ -244,3 +313,66 @@ def registrar_acceso(usuario, resultado, descarga=False):
         except ReglaNegocioError:
             resultado.refresh_from_db()
     registrar(usuario, accion, resultado)
+
+
+# ---------- Panel de seguimiento ----------
+
+# (clave, etiqueta, a quién le toca, estados que agrupa)
+ETAPAS = [
+    ("por_asociar", "Por asociar", "EIRA", [Estado.CARGADO]),
+    ("en_revision", "En revisión", "EIRA", [Estado.ASOCIADO]),
+    ("por_autorizar", "Por autorizar", "Médico", [Estado.REVISADO]),
+    ("por_entregar", "Listos para entregar", "EIRA", [Estado.AUTORIZADO]),
+    ("sin_consultar", "Avisados sin consultar", "Paciente", [Estado.NOTIFICADO]),
+    ("entregados", "Entregados", "Completado", [Estado.CONSULTADO, Estado.ENTREGADO_ASISTIDO]),
+    ("devueltos", "Devueltos", "Laboratorio", [Estado.DEVUELTO]),
+]
+ESTADOS_ENTREGADOS = {Estado.CONSULTADO, Estado.ENTREGADO_ASISTIDO}
+ESTADOS_CERRADOS = ESTADOS_ENTREGADOS | {Estado.DEVUELTO}
+
+
+def estados_de_etapa(clave):
+    return next((estados for c, _, _, estados in ETAPAS if c == clave), None)
+
+
+def formato_duracion(delta):
+    minutos = int(delta.total_seconds() // 60)
+    if minutos < 60:
+        return f"{minutos} min"
+    horas, minutos = divmod(minutos, 60)
+    if horas < 24:
+        return f"{horas} h {minutos} min"
+    dias, horas = divmod(horas, 24)
+    return f"{dias} d {horas} h"
+
+
+def indicadores_panel():
+    conteos = dict(Resultado.objects.values_list("estado").annotate(n=Count("id")))
+    total = sum(conteos.values())
+    etapas = []
+    for clave, etiqueta, responsable, estados in ETAPAS:
+        n = sum(conteos.get(e.value, 0) for e in estados)
+        etapas.append({
+            "clave": clave, "etiqueta": etiqueta, "responsable": responsable, "n": n,
+            "porcentaje": round(100 * n / total) if total else 0,
+        })
+
+    entregados = Resultado.objects.filter(estado__in=ESTADOS_ENTREGADOS)
+    duraciones = []
+    for r in entregados.prefetch_related("eventos"):
+        fin = min((e.fecha for e in r.eventos.all() if e.estado_nuevo in ESTADOS_ENTREGADOS), default=None)
+        if fin:
+            duraciones.append(fin - r.creado)
+    limite = timezone.now() - timedelta(hours=settings.HORAS_DOCUMENTO_DETENIDO)
+    return {
+        "total": total,
+        "etapas": etapas,
+        "entregados": entregados.count(),
+        "porcentaje_entregado": round(100 * entregados.count() / total) if total else 0,
+        "tiempo_promedio": formato_duracion(sum(duraciones, timedelta()) / len(duraciones)) if duraciones else "—",
+        "en_proceso": Resultado.objects.exclude(estado__in=ESTADOS_CERRADOS).count(),
+        "detenidos": Resultado.objects.exclude(estado__in=ESTADOS_CERRADOS).filter(actualizado__lt=limite).count(),
+        "horas_detenido": settings.HORAS_DOCUMENTO_DETENIDO,
+        "requieren_contacto": Resultado.objects.filter(requiere_contacto=True).exclude(
+            estado__in=[Estado.ENTREGADO_ASISTIDO, Estado.DEVUELTO]).count(),
+    }

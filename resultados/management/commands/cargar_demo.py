@@ -1,4 +1,5 @@
 import json
+import shutil
 from datetime import date
 from pathlib import Path
 
@@ -17,8 +18,10 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--con-resultados", action="store_true", help="Carga los PDFs sintéticos como 'Cargado'.")
+        parser.add_argument("--a-bandeja", action="store_true",
+                            help="Copia los PDFs sintéticos (con su .json) a la bandeja de entrada, como lo haría el laboratorio.")
 
-    def handle(self, *args, con_resultados=False, **opciones):
+    def handle(self, *args, con_resultados=False, a_bandeja=False, **opciones):
         pacientes = {}
         for p in json.loads((DATOS / "pacientes.json").read_text(encoding="utf-8")):
             pacientes[p["id"]], _ = Paciente.objects.update_or_create(
@@ -54,3 +57,12 @@ class Command(BaseCommand):
                         folio_laboratorio=r["hoja"]["folio_laboratorio"],
                     )
             self.stdout.write(self.style.SUCCESS("PDFs de ejemplo cargados."))
+
+        if a_bandeja:
+            carpeta = Path(settings.CARPETA_ENTRADA)
+            carpeta.mkdir(parents=True, exist_ok=True)
+            for r in json.loads((DATOS / "resultados.json").read_text(encoding="utf-8")):
+                shutil.copy(DATOS / "pdfs" / r["archivo"], carpeta / r["archivo"])
+                (carpeta / r["archivo"]).with_suffix(".json").write_text(
+                    json.dumps(r["hoja"], ensure_ascii=False, indent=2), encoding="utf-8")
+            self.stdout.write(self.style.SUCCESS(f"PDFs de ejemplo copiados a {carpeta}."))

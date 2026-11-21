@@ -1,12 +1,32 @@
 {% extends "resultados/base.html" %}
 {% block contenido %}
 <h1>Panel de seguimiento</h1>
-<div class="tarjetas-estado">
-  <a class="kpi {% if not filtro %}activo{% endif %}" href="{% url 'panel' %}"><strong>{{ total }}</strong>{% if filtro %}Ver todos{% else %}Todos{% endif %}</a>
-  {% for t in tarjetas %}
-  <a class="kpi kpi-{{ t.estado.value }} {% if filtro == t.estado.value %}activo{% endif %}" href="?estado={{ t.estado.value }}"><strong>{{ t.n }}</strong>{{ t.estado.label }}</a>
-  {% endfor %}
+
+<div class="metricas">
+  <div class="metrica"><strong>{{ ind.total }}</strong>Documentos recibidos</div>
+  <div class="metrica"><strong>{{ ind.en_proceso }}</strong>En proceso</div>
+  <div class="metrica"><strong>{{ ind.porcentaje_entregado }}%</strong>Entregados ({{ ind.entregados }})</div>
+  <div class="metrica"><strong>{{ ind.tiempo_promedio }}</strong>Tiempo promedio de carga a entrega</div>
+  <div class="metrica {% if ind.detenidos %}metrica-alerta{% endif %}"><strong>{{ ind.detenidos }}</strong>Detenidos más de {{ ind.horas_detenido }} h</div>
+  <div class="metrica {% if ind.requieren_contacto %}metrica-alerta{% endif %}"><strong>{{ ind.requieren_contacto }}</strong>Requieren contacto</div>
 </div>
+
+<section class="tarjeta">
+  <h2>¿Dónde están los documentos?</h2>
+  {% if ind.total %}
+  <div class="barra-etapas" aria-hidden="true">
+    {% for e in ind.etapas %}{% if e.n %}<span class="seg-{{ e.clave }}" style="flex:{{ e.n }}" title="{{ e.etiqueta }}: {{ e.n }}">{{ e.n }}</span>{% endif %}{% endfor %}
+  </div>
+  {% endif %}
+  <div class="tarjetas-estado">
+    <a class="kpi {% if not filtro %}activo{% endif %}" href="{% url 'panel' %}"><strong>{{ ind.total }}</strong>Todos</a>
+    {% for e in ind.etapas %}
+    <a class="kpi kpi-{{ e.clave }} {% if filtro == e.clave %}activo{% endif %}" href="?etapa={{ e.clave }}">
+      <strong>{{ e.n }}</strong>{{ e.etiqueta }}<span class="responsable">{{ e.responsable }} · {{ e.porcentaje }}%</span></a>
+    {% endfor %}
+  </div>
+</section>
+
 {% if contacto %}
 <section class="tarjeta alerta">
   <h2>Pacientes que requieren contacto</h2>

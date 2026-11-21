@@ -1,13 +1,16 @@
+<div class="tabla-desplazable">
 <table>
-  <tr><th>Folio lab.</th><th>Nombre en hoja</th><th>Expediente</th><th>Estado</th><th>Actualizado</th><th></th></tr>
+  <tr><th>Folio lab.</th><th>Paciente</th><th>Avance</th><th>Estado</th><th>Le toca</th><th>En esta etapa</th><th></th></tr>
   {% for r in lista %}
   <tr class="{% if r.requiere_contacto %}fila-alerta{% endif %}">
     <td>{{ r.folio_laboratorio }}</td>
-    <td>{{ r.hoja_nombre }}</td>
-    <td>{{ r.paciente.folio_expediente|default:"—" }}</td>
+    <td>{{ r.paciente.nombre|default:r.hoja_nombre }}<div class="nota">{{ r.paciente.folio_expediente|default:"Sin expediente" }}</div></td>
+    <td>{% include "resultados/_avance.html" %}<div class="nota">{{ r.pasos_hechos }}/6</div></td>
     <td>{% include "resultados/_estado.html" %}{% if r.requiere_contacto %} <span class="etiqueta-alerta">Requiere contacto</span>{% endif %}</td>
-    <td>hace {{ r.actualizado|timesince }}</td>
+    <td>{% if r.responsable %}<strong>{{ r.responsable }}</strong><div class="nota">{{ r.siguiente_accion }}</div>{% else %}<span class="ok-txt">{{ r.siguiente_accion }}</span>{% endif %}</td>
+    <td>{{ r.actualizado|timesince }}</td>
     <td><a class="btn btn-chico" href="{% url 'detalle' r.pk %}">Abrir</a></td>
   </tr>
-  {% empty %}<tr><td colspan="6" class="vacio">No hay documentos.</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="7" class="vacio">No hay documentos.</td></tr>{% endfor %}
 </table>
+</div>

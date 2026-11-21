@@ -5,12 +5,7 @@
   {% if r.requiere_contacto %}<span class="etiqueta-alerta">Requiere contacto</span>{% endif %}</h1>
 
 <ol class="recorrido">
-  <li class="{% if r.estado != 'devuelto' %}hecho{% endif %}">Cargado</li>
-  <li class="{% if r.asociado_por %}hecho{% endif %}">Asociado</li>
-  <li class="{% if r.revisado_por %}hecho{% endif %}">Revisado</li>
-  <li class="{% if r.autorizado_por %}hecho{% endif %}">Autorizado</li>
-  <li class="{% if r.estado == 'notificado' or r.estado == 'consultado' or r.notificaciones.exists %}hecho{% endif %}">Notificado</li>
-  <li class="{% if r.estado == 'consultado' or r.estado == 'entregado_asistido' %}hecho{% endif %}">Entregado</li>
+  {% for p in r.pasos %}<li class="{{ p.estado }}">{{ p.etiqueta }}</li>{% endfor %}
 </ol>
 
 <div class="columnas">

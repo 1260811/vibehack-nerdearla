@@ -3,7 +3,7 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count
+from django.conf import settings
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -52,31 +52,52 @@ def laboratorio(request):
             messages.success(request, f"Documento {r.folio_laboratorio} cargado. EIRA lo asociará con el expediente.")
             return redirect("laboratorio")
     cargas = Resultado.objects.filter(cargado_por=request.user)
-    return render(request, "resultados/laboratorio.html", {"form": form, "cargas": cargas})
+    return render(request, "resultados/laboratorio.html", {
+        "form": form, "cargas": cargas,
+        "en_bandeja": servicios.pendientes_en_bandeja(), "carpeta_entrada": settings.CARPETA_ENTRADA,
+    })
+
+
+@require_POST
+@rol_requerido(Rol.LABORATORIO, Rol.EIRA)
+def importar_bandeja(request):
+    cargados, rechazados = servicios.importar_bandeja(request.user)
+    if not cargados and not rechazados:
+        messages.warning(request, "La bandeja de entrada está vacía.")
+    if cargados:
+        messages.success(request, f"{len(cargados)} documento(s) importado(s) desde la bandeja: "
+                                  + ", ".join(r.folio_laboratorio for r in cargados) + ".")
+    for nombre, motivo in rechazados:
+        messages.error(request, f"{nombre} rechazado: {motivo}")
+    return redirect("laboratorio")
+
+
+def _con_avance(consulta):
+    return consulta.select_related("paciente").prefetch_related("notificaciones")
 
 
 @rol_requerido(Rol.EIRA, Rol.MEDICO)
 def panel(request):
-    conteos = dict(Resultado.objects.values_list("estado").annotate(n=Count("id")))
-    tarjetas = [{"estado": e, "n": conteos.get(e.value, 0)} for e in Estado]
-    filtro = request.GET.get("estado", "")
-    resultados = Resultado.objects.select_related("paciente")
-    if filtro in Estado.values:
-        resultados = resultados.filter(estado=filtro)
+    filtro = request.GET.get("etapa", "")
+    estados = servicios.estados_de_etapa(filtro)
+    resultados = _con_avance(Resultado.objects.all())
+    if estados:
+        resultados = resultados.filter(estado__in=estados)
+    else:
+        filtro = ""
     contacto = Resultado.objects.filter(requiere_contacto=True).exclude(
         estado__in=[Estado.ENTREGADO_ASISTIDO, Estado.DEVUELTO]
     ).select_related("paciente")
     return render(request, "resultados/panel.html", {
-        "tarjetas": tarjetas, "total": sum(conteos.values()), "resultados": resultados,
-        "filtro": filtro, "contacto": contacto,
+        "ind": servicios.indicadores_panel(), "resultados": resultados, "filtro": filtro, "contacto": contacto,
     })
 
 
 @rol_requerido(Rol.MEDICO)
 def medico(request):
     return render(request, "resultados/medico.html", {
-        "pendientes": Resultado.objects.filter(estado=Estado.REVISADO).select_related("paciente"),
-        "autorizados": Resultado.objects.filter(autorizado_por=request.user).select_related("paciente")[:20],
+        "pendientes": _con_avance(Resultado.objects.filter(estado=Estado.REVISADO)),
+        "autorizados": _con_avance(Resultado.objects.filter(autorizado_por=request.user))[:20],
     })
 
 

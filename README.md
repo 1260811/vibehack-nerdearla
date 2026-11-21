@@ -26,6 +26,32 @@ Abre http://localhost:8000. Contraseña para todos los usuarios: `Demo2026!`
 
 Sin `--con-resultados`, el laboratorio sube los PDFs a mano desde `datos_demo/pdfs/` (los datos de cada hoja están en `datos_demo/resultados.json`).
 
+## Bandeja de entrada (el laboratorio solo deja archivos)
+
+El laboratorio no tiene que capturar ni avisar: deja cada PDF con un `.json` del mismo nombre en una carpeta compartida y el sistema lo carga con las mismas validaciones que la carga manual.
+
+```
+bandeja_entrada/
+  R1_LAB-24001.pdf
+  R1_LAB-24001.json   {"nombre": "...", "fecha_nacimiento": "1988-03-14", "folio_expediente": "EIRA-0001", "folio_laboratorio": "LAB-24001"}
+```
+
+```bash
+python manage.py cargar_demo --a-bandeja          # copia los 5 PDFs de ejemplo a la bandeja, como lo haría el laboratorio
+python manage.py importar_bandeja                 # los carga (o botón "Importar bandeja ahora" en la pantalla de carga)
+python manage.py importar_bandeja --vigilar 30    # revisa la carpeta cada 30 s
+```
+
+- Los cargados pasan a `procesados/`; los rechazados (sin `.json`, datos incompletos, folio repetido, no es PDF) a `rechazados/` con un `.motivo.txt`. Todo queda en la bitácora.
+- La carpeta se cambia con `EIRA_CARPETA_ENTRADA` (puede ser una carpeta de red o sincronizada con Drive/OneDrive/un bucket). La carga se firma con el usuario `EIRA_USUARIO_BANDEJA` (por defecto `laboratorio@lab.test`).
+- Almacenamiento: los PDFs se guardan en `almacen_privado/`. Para pasar a la nube (S3, GCS, Azure) basta configurar `STORAGES` con django-storages; las vistas no cambian.
+
+## Panel de seguimiento
+
+- Indicadores: documentos recibidos, en proceso, % entregados, tiempo promedio de carga a entrega, detenidos más de 24 h y pacientes que requieren contacto.
+- Barra y tarjetas por etapa, con a quién le toca: Por asociar (EIRA), En revisión (EIRA), Por autorizar (Médico), Listos para entregar (EIRA), Avisados sin consultar (Paciente), Entregados, Devueltos (Laboratorio). Cada tarjeta filtra la tabla.
+- La tabla muestra el avance de cada documento en 6 pasos, a quién le toca y cuánto lleva en la etapa actual.
+
 ## Recorrido del documento
 
 ```

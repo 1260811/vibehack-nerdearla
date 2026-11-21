@@ -48,6 +48,28 @@ class Estado(models.TextChoices):
     DEVUELTO = "devuelto", "Devuelto"
 
 
+PASOS = [
+    ("cargado", "Cargado"),
+    ("asociado", "Asociado"),
+    ("revisado", "Revisado"),
+    ("autorizado", "Autorizado"),
+    ("notificado", "Notificado"),
+    ("entregado", "Entregado"),
+]
+
+# estado -> (a quién le toca, qué sigue)
+SIGUIENTE = {
+    Estado.CARGADO: ("EIRA", "Asociar con expediente"),
+    Estado.ASOCIADO: ("EIRA", "Revisión administrativa"),
+    Estado.REVISADO: ("Médico", "Autorización clínica"),
+    Estado.AUTORIZADO: ("EIRA", "Avisar o entregar"),
+    Estado.NOTIFICADO: ("Paciente", "Consultar el documento"),
+    Estado.CONSULTADO: ("", "Completado"),
+    Estado.ENTREGADO_ASISTIDO: ("", "Completado"),
+    Estado.DEVUELTO: ("Laboratorio", "Corregir y volver a cargar"),
+}
+
+
 class Resultado(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     archivo = models.FileField(upload_to=ruta_archivo)
@@ -77,6 +99,43 @@ class Resultado(models.Model):
 
     def __str__(self):
         return f"{self.folio_laboratorio} · {self.get_estado_display()}"
+
+    @property
+    def responsable(self):
+        return SIGUIENTE[self.estado][0]
+
+    @property
+    def siguiente_accion(self):
+        return SIGUIENTE[self.estado][1]
+
+    @property
+    def pasos(self):
+        """Avance del documento: cada paso queda hecho, actual, pendiente, omitido o devuelto."""
+        hechos = {
+            "cargado": True,
+            "asociado": self.asociado_por_id is not None,
+            "revisado": self.revisado_por_id is not None,
+            "autorizado": self.autorizado_por_id is not None,
+            "notificado": self.estado in {Estado.NOTIFICADO, Estado.CONSULTADO} or bool(self.notificaciones.all()),
+            "entregado": self.estado in {Estado.CONSULTADO, Estado.ENTREGADO_ASISTIDO},
+        }
+        ultimo_hecho = max(i for i, (clave, _) in enumerate(PASOS) if hechos[clave])
+        salida = []
+        for i, (clave, etiqueta) in enumerate(PASOS):
+            if hechos[clave]:
+                estado = "hecho"
+            elif i < ultimo_hecho:
+                estado = "omitido"
+            elif i == ultimo_hecho + 1:
+                estado = "devuelto" if self.estado == Estado.DEVUELTO else "actual"
+            else:
+                estado = "pendiente"
+            salida.append({"clave": clave, "etiqueta": etiqueta, "estado": estado})
+        return salida
+
+    @property
+    def pasos_hechos(self):
+        return sum(p["estado"] == "hecho" for p in self.pasos)
 
 
 class Notificacion(models.Model):

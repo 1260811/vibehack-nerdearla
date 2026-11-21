@@ -1,5 +1,7 @@
+import json
 import shutil
 import tempfile
+from pathlib import Path
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -178,3 +180,75 @@ class FlujoTests(TestCase):
         ]:
             self.client.login(username=correo, password="Demo2026!")
             self.assertEqual(self.client.get(url).status_code, 200, url)
+
+
+@override_settings(MEDIA_ROOT=MEDIA_TEMPORAL)
+class BandejaYPanelTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("cargar_demo", verbosity=0)
+
+    def setUp(self):
+        self.lab = Usuario.objects.get(username="laboratorio@lab.test")
+        self.eira = Usuario.objects.get(username="admin@eira.test")
+        self.carpeta = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.carpeta, ignore_errors=True)
+        ajustes = override_settings(CARPETA_ENTRADA=self.carpeta)
+        ajustes.enable()
+        self.addCleanup(ajustes.disable)
+
+    def test_importa_pdfs_de_la_bandeja_y_los_mueve(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        cargados, rechazados = servicios.importar_bandeja(self.lab)
+        self.assertEqual((len(cargados), rechazados), (5, []))
+        self.assertEqual(servicios.pendientes_en_bandeja(), [])
+        self.assertEqual(len(list((self.carpeta / "procesados").glob("*.pdf"))), 5)
+        r = Resultado.objects.get(folio_laboratorio="LAB-24001")
+        self.assertEqual((r.estado, r.cargado_por), (Estado.CARGADO, self.lab))
+        self.assertIn("Bandeja de entrada", r.eventos.get(accion="Carga de PDF").detalle)
+
+    def test_bandeja_rechaza_sin_datos_duplicados_y_no_pdf(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        (self.carpeta / "R2_LAB-24002.json").unlink()
+        (self.carpeta / "falso.pdf").write_bytes(b"no soy un pdf")
+        (self.carpeta / "falso.json").write_text(json.dumps({
+            "nombre": "X", "fecha_nacimiento": "2000-01-01", "folio_expediente": "EIRA-9", "folio_laboratorio": "LAB-9",
+        }))
+        servicios.importar_bandeja(self.lab)
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        cargados, rechazados = servicios.importar_bandeja(self.lab)
+        motivos = dict(rechazados)
+        self.assertEqual([r.folio_laboratorio for r in cargados], ["LAB-24002"])
+        self.assertIn("ya fue cargado", motivos["R1_LAB-24001.pdf"])
+        self.assertTrue((self.carpeta / "rechazados" / "falso.motivo.txt").exists())
+        self.assertTrue(EventoBitacora.objects.filter(accion="Importación rechazada", detalle__contains="Falta").exists())
+        self.assertFalse(Resultado.objects.filter(folio_laboratorio="LAB-9").exists())
+
+    def test_boton_importar_bandeja(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        self.client.login(username="laboratorio@lab.test", password="Demo2026!")
+        respuesta = self.client.post(reverse("importar_bandeja"), follow=True)
+        self.assertContains(respuesta, "5 documento(s) importado(s)")
+        self.client.login(username="medico@eira.test", password="Demo2026!")
+        self.assertEqual(self.client.post(reverse("importar_bandeja")).status_code, 403)
+
+    def test_avance_y_panel_por_etapa(self):
+        call_command("cargar_demo", "--a-bandeja", verbosity=0)
+        servicios.importar_bandeja(self.lab)
+        r1 = Resultado.objects.get(folio_laboratorio="LAB-24001")
+        r5 = Resultado.objects.get(folio_laboratorio="LAB-24005")
+        servicios.asociar(r1, Paciente.objects.get(folio_expediente="EIRA-0001"), self.eira)
+        servicios.devolver(r5, self.eira, "Escaneo ilegible")
+        self.assertEqual([p["estado"] for p in r1.pasos][:3], ["hecho", "hecho", "actual"])
+        self.assertEqual(r1.responsable, "EIRA")
+        self.assertEqual([p["estado"] for p in r5.pasos][:2], ["hecho", "devuelto"])
+
+        ind = servicios.indicadores_panel()
+        etapas = {e["clave"]: e["n"] for e in ind["etapas"]}
+        self.assertEqual((etapas["por_asociar"], etapas["en_revision"], etapas["devueltos"]), (3, 1, 1))
+        self.assertEqual((ind["total"], ind["en_proceso"]), (5, 4))
+
+        self.client.login(username="admin@eira.test", password="Demo2026!")
+        respuesta = self.client.get(reverse("panel"), {"etapa": "devueltos"})
+        self.assertContains(respuesta, "LAB-24005")
+        self.assertNotContains(respuesta, "LAB-24001")

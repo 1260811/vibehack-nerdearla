@@ -484,12 +484,14 @@ def puede_ver_documento(usuario, resultado):
     return False
 
 
-def integridad_correcta(resultado):
+def error_integridad(resultado):
     try:
         with resultado.archivo.open("rb") as f:
-            return calcular_sha256(f) == resultado.sha256
+            if calcular_sha256(f) != resultado.sha256:
+                return "El hash del archivo no coincide."
     except FileNotFoundError:
-        return False
+        return "El archivo no se encuentra en el almacén."
+    return None
 
 
 @transaction.atomic

@@ -256,6 +256,7 @@ class FlujoTests(TestCase):
                 self.assertContains(respuesta, "verificación de integridad", status_code=409)
                 self.assertEqual(r.eventos.count(), eventos + 1)
                 self.assertTrue(r.eventos.filter(accion="Integridad fallida", usuario=self.eira).exists())
+                self.assertEqual(r.eventos.latest("id").detalle, "El archivo no se encuentra en el almacén.")
 
     def test_archivo_ausente_no_se_entrega_a_la_paciente(self):
         r = self.resultado("LAB-24001")
@@ -272,6 +273,7 @@ class FlujoTests(TestCase):
                 self.assertContains(respuesta, "verificación de integridad", status_code=409)
                 self.assertEqual(r.eventos.count(), eventos + 1)
                 self.assertTrue(r.eventos.filter(accion="Integridad fallida", usuario__isnull=True).exists())
+                self.assertEqual(r.eventos.latest("id").detalle, "El archivo no se encuentra en el almacén.")
                 r.refresh_from_db()
                 self.assertEqual(r.estado, Estado.NOTIFICADO)
 
@@ -284,6 +286,7 @@ class FlujoTests(TestCase):
                 f.write(b"alterado")
             self.client.login(username="admin@eira.test", password="Demo2026!")
             self.assertEqual(self.client.get(reverse("documento", args=[r.pk])).status_code, 409)
+            self.assertEqual(r.eventos.latest("id").detalle, "El hash del archivo no coincide.")
         finally:
             with open(r.archivo.path, "wb") as f:
                 f.write(original)

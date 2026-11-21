@@ -23,6 +23,8 @@ CONTRATOS_PENDIENTES = {
     "test_preferencia_asistida": "Respetar la preferencia asistida aunque haya correo y teléfono.",
     "test_token_caducable": "El enlace del aviso caduca a las 72 horas.",
     "test_varios_pacientes_pdf": "Exigir control explícito de una sola paciente por documento.",
+    "test_fecha_malformada_limite": "Contabilizar y bloquear entradas inválidas tras tres intentos, igual que fechas incorrectas.",
+    "test_reenvio_codigo_limite": "Aplicar límite de frecuencia a códigos; contrato propuesto: máximo tres solicitudes consecutivas inmediatas.",
 }
 
 
@@ -83,6 +85,12 @@ class Command(BaseCommand):
             "✅ = contrato satisfecho; ❌ = brecha reproducida (fallo esperado), no una protección implementada.",
             "Los contratos de funciones/campos ausentes comprueban ausencia, no simulan una implementación.",
             "No se probaron proveedores reales, OCR, conectividad ni despliegue productivo.", "",
+            "## Reejecución contra la rama principal actualizada", "",
+            "Antes de cambios: suite completa 57 pruebas, 12 fallos esperados; tester 29 pruebas, 12 fallos esperados. Sin éxitos inesperados.",
+            "Respecto al primer tester: ✅ enlace con caducidad de 72 h y ✅ preferencia asistida ya resueltos en main.",
+            "✅ Nuevo control comprobado: respaldo simulado correo→SMS→asistencia. ❌ Integración de proveedor real aún ausente.",
+            "❌ Nuevas brechas: entradas de fecha malformadas sin límite/auditoría y solicitudes de código sin límite de frecuencia.",
+            "Los cambios de esta rama solo amplían pruebas y documentación: no corrigen la aplicación.", "",
             f"Escenarios: {resultado.testsRun}. Brechas esperadas: {len(resultado.expectedFailures)}. "
             f"Fallos inesperados: {fallos}.", "",
             "| Escenario | Actor | Esperado | Obtenido | Estado | Riesgo/recomendación |",

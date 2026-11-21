@@ -129,9 +129,14 @@ def pendientes_en_bandeja(carpeta=None):
     return sorted(carpeta.glob("*.pdf")) if carpeta.is_dir() else []
 
 
-def _mover(ruta, destino):
+def _archivar(destino, *rutas):
+    """Mueve los archivos de un envío a `destino` sin pisar envíos anteriores con el mismo nombre."""
     destino.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(ruta), str(destino / ruta.name))
+    sufijo = f"-{timezone.now():%Y%m%d-%H%M%S-%f}" if any((destino / r.name).exists() for r in rutas) else ""
+    finales = [destino / f"{r.stem}{sufijo}{r.suffix}" for r in rutas]
+    for ruta, final in zip(rutas, finales):
+        shutil.move(str(ruta), str(final))
+    return finales
 
 
 def _reclamar(ruta, trabajo):
@@ -197,14 +202,12 @@ def importar_bandeja(usuario, carpeta=None):
         except ReglaNegocioError as e:
             motivo = str(e)
             registrar(usuario, "Importación rechazada", detalle=f"{pdf.name}: {motivo}")
-            _mover(pdf, carpeta / "rechazados")
-            if datos_json.exists():
-                _mover(datos_json, carpeta / "rechazados")
-            (carpeta / "rechazados" / f"{pdf.stem}.motivo.txt").write_text(motivo + "\n", encoding="utf-8")
+            enviados = [pdf] + ([datos_json] if datos_json.exists() or datos_json.is_symlink() else [])
+            archivado = _archivar(carpeta / "rechazados", *enviados)[0]
+            (carpeta / "rechazados" / f"{archivado.stem}.motivo.txt").write_text(motivo + "\n", encoding="utf-8")
             rechazados.append((pdf.name, motivo))
         else:
-            _mover(pdf, carpeta / "procesados")
-            _mover(datos_json, carpeta / "procesados")
+            _archivar(carpeta / "procesados", pdf, datos_json)
             cargados.append(resultado)
     if trabajo:
         trabajo.rmdir()

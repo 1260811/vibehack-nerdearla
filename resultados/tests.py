@@ -261,6 +261,14 @@ class BandejaYPanelTests(TestCase):
         self.assertNotIn("LAB-24001", [r.folio_laboratorio for r in cargados])
         self.assertEqual(sorted(p.name for p in self.carpeta.glob(".importando-*")), [])
 
+    def test_rechazos_con_el_mismo_nombre_no_se_pisan(self):
+        for _ in range(2):
+            (self.carpeta / "falso.pdf").write_bytes(b"no soy un pdf")
+            servicios.importar_bandeja(self.lab)
+        rechazados = self.carpeta / "rechazados"
+        self.assertEqual(len(list(rechazados.glob("falso*.pdf"))), 2)
+        self.assertEqual(len(list(rechazados.glob("falso*.motivo.txt"))), 2)
+
     def test_avance_y_panel_por_etapa(self):
         call_command("cargar_demo", "--a-bandeja", verbosity=0)
         servicios.importar_bandeja(self.lab)

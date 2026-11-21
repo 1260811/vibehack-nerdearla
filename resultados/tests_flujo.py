@@ -104,18 +104,24 @@ class EscenariosFlujo(TestCase):
     def test_pdf_invalido_con_firma(self):
         """Laboratorio: BRECHA, la firma PDF no garantiza documento válido ni legible; validar contenido."""
         with self.assertRaises(s.ReglaNegocioError):
-            self.cargar(contenido=b"%PDF-basura ilegible")
+            self.cargar(contenido=b"%PDF-basura ilegible", folio="L-2")
 
     @unittest.expectedFailure
     def test_varios_pacientes_pdf(self):
         """EIRA: BRECHA, falta control de varios pacientes por PDF; exigir revisión explícita."""
         self.assertIn("paciente_unico_verificado", {c.name for c in Resultado._meta.fields})
 
-    @unittest.expectedFailure
     def test_duplicado_manual(self):
-        """Laboratorio: BRECHA, carga manual repite hash y folio; deduplicar también fuera de bandeja."""
-        with self.assertRaises(s.ReglaNegocioError):
-            self.cargar()
+        """Laboratorio: carga manual rechaza un folio ya cargado, igual que la bandeja."""
+        with self.assertRaisesMessage(s.ReglaNegocioError, "El folio de laboratorio L-1 ya fue cargado."):
+            self.cargar(folio=" l-1 ")
+        self.client.force_login(self.lab)
+        respuesta = self.client.post(reverse("laboratorio"), {
+            "archivo": SimpleUploadedFile("hoja.pdf", b"%PDF-1.4\nDocumento sintetico\n%%EOF"),
+            "hoja_nombre": self.p.nombre, "hoja_fecha_nacimiento": "1990-01-01",
+            "hoja_folio_expediente": "E-1", "folio_laboratorio": "L-1"})
+        self.assertContains(respuesta, "ya fue cargado")
+        self.assertEqual(Resultado.objects.filter(folio_laboratorio="L-1").count(), 1)
 
     def test_salto_estado(self):
         """Médico: no puede autorizar desde cargado."""
@@ -263,7 +269,7 @@ class EscenariosFlujo(TestCase):
         self.assertTrue(EventoBitacora.objects.filter(accion="Importación rechazada").exists())
 
     def test_bandeja_duplicado(self):
-        """Laboratorio: bandeja bloquea folio previamente cargado, a diferencia de carga manual."""
+        """Laboratorio: bandeja bloquea folio previamente cargado."""
         (self.carpeta / "repetido.pdf").write_bytes(b"%PDF-1.4")
         (self.carpeta / "repetido.json").write_text(json.dumps({
             "nombre": self.p.nombre, "fecha_nacimiento": "1990-01-01",
